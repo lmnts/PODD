@@ -107,7 +107,7 @@ work in progress
 
 1. Sample rate change (higher frequency) causes inability to upload to server
 2. Date and Time do not update correctly when units are not plugged into ethernet during setup
-3. The resistor in the battery charging section of the circuit is too big
+3. R11 which is part of the the battery charging circuit is too big: should be switched to 390 Ohm
 
 
 ## License
