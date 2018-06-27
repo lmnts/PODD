@@ -1,0 +1,8 @@
+Date, Time, Device ID, Project, Location, Coordinator?, Network Code, Setup Date, Teardown Date, Upload Rate, Light, RH, Globe Temp, Sound, CO2, Particle, CO
+17-8-29, 14:8:48, BCoord, UWBothell, 2ndLevelComm, Coordinator, 1, 2017-08-29, 2017-08-29, 10001, 120, 300, 120, 120, 300, 3600, 300
+17-8-29, 15:24:53, BCoord, UWBothell, LowerLevelDesk, Coordinator, 1, 2017-08-29, 2017-08-29, 10001, 120, 300, 120, 120, 300, 3600, 300
+17-8-29, 16:24:40, BCoord, UWBothell, MainLevelStaff, Coordinator, 1, 2017-08-29, 2017-08-30, 10001, 120, 300, 120, 120, 300, 3600, 300
+17-9-5, 14:36:55, BCoord, UWBothell, MainLevelStaff, Coordinator, 1, 2017-09-05, 2017-09-08, 10001, 120, 300, 120, 120, 300, 3600, 300
+17-9-20, 13:45:29, DTtestC, DTtest, TS, Coordinator, 1, 2017-09-20, 2017-09-20, 10001, 120, 300, 120, 120, 300, 3600, 300
+17-9-20, 14:55:51, DTtest13, DTtest3, TS, Drone, 1, 2017-09-20, 2017-09-20, 10001, 120, 300, 120, 120, 300, 3600, 300
+17-9-20, 15:27:7, CDcoord, CRtesting, 5L, Coordinator, 1, 2017-09-20, 2017-09-22, 10001, 120, 300, 120, 120, 300, 3600, 300
