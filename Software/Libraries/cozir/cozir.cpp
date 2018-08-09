@@ -13,7 +13,7 @@
 
 #include "Cozir.h"
 #include "SoftwareSerial.h"
-#include "WProgram.h"
+
 ////////////////////////////////////////////////////////////
 //
 // CONSTRUCTOR
@@ -48,36 +48,36 @@ void COZIR::SetOperatingMode(uint8_t mode)
 // this is the default behaviour of this Class but
 // not of the sensor!!
 //
-//float COZIR::Fahrenheit()
-//{
-//  return (Celsius() * 1.8) + 32;
-//}
+float COZIR::Fahrenheit()
+{
+  return (Celsius() * 1.8) + 32;
+}
 
-//float COZIR::Celsius()
-//{
-//  float f = 0;
-//  uint16_t rv = Request("T");
-//  if (rv < 1000)
-//  {
-//      f = 0.1 * rv;
-//  }
-//  else
-//  {
-//    f = -0.1 * (rv-1000);
-//  }
-//  return f;
-//}
+float COZIR::Celsius()
+{
+  float f = 0;
+  uint16_t rv = Request("T");
+  if (rv < 1000)
+  {
+      f = 0.1 * rv;
+  }
+  else
+  {
+    f = -0.1 * (rv-1000);
+  }
+  return f;
+}
 
-//float COZIR::Humidity()
-//{
-//  return 0.1 * Request("H");
-//}
+float COZIR::Humidity()
+{
+  return 0.1 * Request("H");
+}
 
 // TODO UNITS UNKNOWN
-//float COZIR::Light()
-//{
-//  return 1.0 * Request("L");
-//}
+float COZIR::Light()
+{
+  return 1.0 * Request("L");
+}
 
 uint16_t COZIR::CO2()
 {
@@ -223,38 +223,42 @@ void COZIR::GetConfiguration()
 /////////////////////////////////////////////////////////
 // PRIVATE
   
-void COZIR::Command(char* s)
+void COZIR::Command(const char* s)
 {
   CZR_Serial.print(s);
   CZR_Serial.print("\r\n");
 }
 
-uint16_t COZIR::Request(char* s)
+uint16_t COZIR::Request(const char* s)
 {
-  CZR_Serial.flush();
+  // Clear buffer
+  while(CZR_Serial.available()) {
+    CZR_Serial.read();
+  }
+  // Send command over serial
   Command(s);
-  // empty buffer
-  buffer[0] = '\0';
-  // read answer; there may be a 100ms delay!
-  // TODO: PROPER TIMEOUT CODE.
-  delay(250);  
+  // In streaming mode, it may take up to 100ms for a response,
+  // but other modes should be nearly immediate response.
+  delay(2);
+  const int DELAY_STEP = 10;
+  for (int dt = 0; dt < 100; dt += DELAY_STEP) {
+    if (CZR_Serial.available()) break;
+    delay(DELAY_STEP);
+  }
+  // Ensure entire response arrives
+  delay(2);
+
+  // All commands return a single character indicating the data type
+  // or command, a space, then an integer value (except for 'Y' and
+  // '@' commands).  For some commands, additional fields follow,
+  // but those will be ignored here.
   int idx = 0;
-  while(CZR_Serial.available() && idx < 19)
-  {
-	buffer[idx++] = CZR_Serial.read();
+  while(CZR_Serial.available()) {
+    buffer[idx++] = CZR_Serial.read();
   }
   buffer[idx] = '\0';
+  if (idx < 3) return 0;
   uint16_t rv = 0;
-
-  switch(buffer[1])
-  {
-    case 'T' :
-            rv = atoi(&buffer[5]);
-            if (buffer[4] == 1) rv += 1000;
-            break;
-    default :
-            rv = atoi(&buffer[2]);
-            break;
-  }
+  rv = atoi(&buffer[2]);
   return rv;
 }

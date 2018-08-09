@@ -59,10 +59,10 @@ class COZIR
 	
 	void SetOperatingMode(uint8_t mode);
 		
-	//float Celsius();
-	//float Fahrenheit();
-	//float Humidity();
-	//float Light();
+	float Celsius();
+	float Fahrenheit();
+	float Humidity();
+	float Light();
 	uint16_t CO2();
 
 	uint16_t FineTuneZeroPoint(uint16_t , uint16_t);
@@ -88,8 +88,8 @@ class COZIR
   private:
     SoftwareSerial& CZR_Serial;
     char buffer[20];
-	void Command(char* );
-	uint16_t Request(char* );
+	void Command(const char* );
+	uint16_t Request(const char* );
 };
 
 #endif
