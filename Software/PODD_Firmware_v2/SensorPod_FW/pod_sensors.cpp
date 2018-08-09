@@ -13,7 +13,6 @@
 #include <AsyncDelay.h>
 #include "cozir.h"
 #include <Wire.h>
-#include <SoftWire.h>
 #include <HIH61xx.h>
 
 // SOUND
