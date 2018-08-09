@@ -14,7 +14,7 @@
 #include "cozir.h"
 #include <Wire.h>
 #include <SoftWire.h>
-#include <HIH61XX.h>
+#include <HIH61xx.h>
 
 // SOUND
 unsigned int knock;
@@ -49,7 +49,8 @@ int endOfSampling = 0;
 #define lightPin A2
 
 // HIH
-HIH61XX hih (0x27); //temp+rh
+#define HIH_ADDR 0x27
+HIH61xx<TwoWire> hih(Wire);
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
@@ -63,6 +64,7 @@ void sensorSetup() {
 
   analogReference(EXTERNAL);
 
+  hih.initialise(HIH_ADDR);
   czr.SetOperatingMode(CZR_POLLING);
 }
 
@@ -149,16 +151,19 @@ void calibrateCO2() {
   //czr.SetDigiFilter(32);
 }
 
+/* TODO: Potential for optimization of HIH Temp+RH sensor here.
+   A single hih.read() updates both values and a timer can be
+   used to signal when to collect the reading after initiating
+   the measurement, rather than just sitting here waiting. */
+
 float getRHTemp() {
-  hih.start(); // TODO: can we put this in the setup function?
-  hih.update();
-  return (hih.temperature());
+  hih.read();  // Blocks for ~45ms as sensor is read
+  return hih.getAmbientTemp()/100.0;  // hih gives temp x 100
 }
 
 float getRHHum() {
-  hih.start(); // TODO: can we put this in the setup function?
-  hih.update();
-  return hih.humidity();
+  hih.read();  // Blocks for ~45ms as sensor is read
+  return hih.getRelHumidity()/100.0;  // hih gives RH[%] x 100
 }
 
 float getLight() {
