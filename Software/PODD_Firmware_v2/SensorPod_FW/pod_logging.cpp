@@ -18,7 +18,12 @@
 
 #include <SparkFunDS3234RTC.h>
 #include <SD.h>
-#include <ManyAlarms.h> // Unlisted modification of TimeAlarms.h
+
+// Increase number of available alarms.
+// Must define this prior to first include of TimeAlarms.h
+// or the too-small default number will be used.
+#define dtNBR_ALARMS 12
+#include <TimeAlarms.h>
 
 
 #define logint 01 // whenever seconds hit 01 (RTC)
