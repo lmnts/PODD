@@ -13,6 +13,10 @@ Development environment specifics:
 Arduino 1.6.8
 SparkFun RedBoard
 SparkFun Real Time Clock Module (v14)
+
+Updated 16 October 2016 by Vassilis Serasidis <avrsite@yahoo.gr>
+- Added readFromSRAM' and 'writeToSRAM' functions
+
 ******************************************************************************/
 #include <Arduino.h>
 #include <SPI.h>
@@ -75,7 +79,13 @@ enum DS3234_registers {
 	DS3234_REGISTER_XTAL,    // 0x10
 	DS3234_REGISTER_TEMPM,   // 0x11
 	DS3234_REGISTER_TEMPL,   // 0x12
-	DS3234_REGISTER_TEMPEN   // 0x13
+	DS3234_REGISTER_TEMPEN,  // 0x13
+  DS3234_REGISTER_RESERV1, // 0x14
+  DS3234_REGISTER_RESERV2, // 0x15
+  DS3234_REGISTER_RESERV3, // 0x16
+  DS3234_REGISTER_RESERV4, // 0x17
+  DS3234_REGISTER_SRAMA,   // 0x18
+  DS3234_REGISTER_SRAMD    // 0x19
 };
 
 // Base register for complete time/date readings
@@ -118,7 +128,7 @@ public:
 	// setTime -- Set time and date/day registers of DS3234 (using data array)
 	void setTime(uint8_t * time, uint8_t len);
 	// autoTime -- Set time with compiler time/date
-	bool autoTime();
+	void autoTime();
 	
 	// To set specific values of the clock, use the set____ functions:
 	void setSecond(uint8_t s);
@@ -184,7 +194,7 @@ public:
 	void enableAlarmInterrupt(bool alarm1 = true, bool alarm2 = true);
 	
 	// alarm1 and alarm2 check their respective flag in the control/status
-	// register. They return true is the flag is set.
+	// register. They return true if the flag is set.
 	// The "clear" boolean, commands the alarm function to clear the flag
 	// (assuming it was set).
 	bool alarm1(bool clear = true);
@@ -204,6 +214,9 @@ public:
 	void set12Hour(bool enable12 = true); // Enable/disable 12-hour mode
 	void set24Hour(bool enable24 = true); // Enable/disable 24-hour mode
 	
+  void writeToSRAM(uint8_t address, uint8_t data);
+  uint8_t readFromSRAM(uint8_t address);
+  
 private:
 	uint8_t _csPin;
 	uint8_t _time[TIME_ARRAY_LENGTH];

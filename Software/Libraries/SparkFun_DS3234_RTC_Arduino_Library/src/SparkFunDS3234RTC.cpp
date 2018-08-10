@@ -13,6 +13,10 @@ Development environment specifics:
 Arduino 1.6.8
 SparkFun RedBoard
 SparkFun Real Time Clock Module (v14)
+
+Updated 16 October 2016 by Vassilis Serasidis <avrsite@yahoo.gr>
+- Added readFromSRAM' and 'writeToSRAM' functions
+
 ******************************************************************************/
 
 #include "SparkFunDS3234RTC.h"
@@ -126,7 +130,7 @@ void DS3234::setTime(uint8_t * time, uint8_t len)
 }
 
 // autoTime -- Fill DS3234 time registers with compiler time/date
-bool DS3234::autoTime()
+void DS3234::autoTime()
 {
 	_time[TIME_SECONDS] = DECtoBCD(BUILD_SECOND);
 	_time[TIME_MINUTES] = DECtoBCD(BUILD_MINUTE);
@@ -157,7 +161,8 @@ bool DS3234::autoTime()
 	
 	_time[TIME_MONTH] = DECtoBCD(BUILD_MONTH);
 	_time[TIME_DATE] = DECtoBCD(BUILD_DATE);
-	_time[TIME_YEAR] = DECtoBCD(BUILD_YEAR - 2000); //! Not Y2K (or Y2.1K)-proof :\
+        //! Not Y2K (or Y2.1K)-proof :
+	_time[TIME_YEAR] = DECtoBCD(BUILD_YEAR - 2000); 
 	
 	// Calculate weekday (from here: http://stackoverflow.com/a/21235587)
 	// Result: 0 = Sunday, 6 = Saturday
@@ -667,7 +672,6 @@ uint8_t DS3234::spiReadByte(DS3234_registers reg)
 // spiWriteBytes -- read a set number of bytes from an spi device, incrementing from a register
 void DS3234::spiReadBytes(DS3234_registers reg, uint8_t * dest, uint8_t len)
 {
-	uint8_t retVal = 0;
 	SPI.beginTransaction(DS3234SPISettings);
 	digitalWrite(_csPin, LOW);
 	SPI.transfer(reg);
@@ -678,5 +682,16 @@ void DS3234::spiReadBytes(DS3234_registers reg, uint8_t * dest, uint8_t len)
 	digitalWrite(_csPin, HIGH);
 	SPI.endTransaction();
 }
+
+void DS3234::writeToSRAM(uint8_t address, uint8_t data){
+  spiWriteByte(DS3234_REGISTER_SRAMA, address);
+  spiWriteByte(DS3234_REGISTER_SRAMD, data);
+}
+
+uint8_t DS3234::readFromSRAM(uint8_t address){
+  spiWriteByte(DS3234_REGISTER_SRAMA, address);
+  return spiReadByte(DS3234_REGISTER_SRAMD);
+}
+
 
 DS3234 rtc; // Use rtc in sketches

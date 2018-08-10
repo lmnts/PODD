@@ -1,0 +1,22 @@
+{
+  "name": "SparkFun DS3234 Real-Time Clock (RTC)",
+  "keywords": "RTC, DS3234, SparkFun",
+  "description": "Arduino library for the SPI-based DS3234 real time clock (RTC). Allows you to set and read the time and date, set both alarms, and configure the SQW output pin.",
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/sparkfun/SparkFun_DS3234_RTC_Arduino_Library.git"
+  },
+  "authors":
+  [
+    {
+      "name": "SparkFun Electronics",
+      "email": "techsupport@sparkfun.com",
+      "url": "https://www.sparkfun.com/",
+      "maintainer": true
+    }
+  ],
+  "version": "1.1.0",
+  "frameworks": "arduino",
+  "platforms": "*"
+}
