@@ -486,7 +486,7 @@ void updateConfig(String DID, String Location, String Coordinator, String Projec
 }
 
 // postPage is function that performs POST request and prints results.
-byte postPage(char* domainBuffer, int thisPort, char* page, char* thisData)
+byte postPage(const char* domainBuffer, int thisPort, const char* page, const char* thisData)
 {
   #ifdef DEBUG
   writeDebugLog(F("Fxn: postPage()"));
@@ -557,7 +557,7 @@ void getTimeFromWeb(){
 }
 
 // send an NTP request to the time server at the given address
-void sendNTPpacket(char* address) {
+void sendNTPpacket(const char* address) {
   // set all bytes in the buffer to 0
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request

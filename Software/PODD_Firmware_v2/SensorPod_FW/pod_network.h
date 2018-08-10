@@ -42,8 +42,8 @@ void saveReading(String lstr, String rstr, String atstr, String gtstr, String ss
 void postReading(String DID, String ST, String R, String DT);
 void updateRate(String DID, String ST, String R, String DT);
 void updateConfig(String DID, String Location, String Coordinator, String Project, String Rate, String Setup, String Teardown, String Datetime, String NetID);
-byte postPage(char* domainBuffer, int thisPort, char* page, char* thisData);
+byte postPage(const char* domainBuffer, int thisPort, const char* page, const char* thisData);
 void getTimeFromWeb();
-void sendNTPpacket(char* address);
+void sendNTPpacket(const char* address);
 
 #endif
