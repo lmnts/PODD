@@ -133,19 +133,23 @@ void savePodConfig() { // Save configuration to SD, EEPROM, and DB.
     EEPROM.write(CONFIG_START + t, *((char*)&storage + t));
   
   // Save to DB - Rates
+  // If these are sent too fast over XBee network by non-coordinators,
+  // there may be buffer overflows and/or packet loss
+  const unsigned long delta = (storage.coord == 'Y') ? 250 : 1000;
   updateRate(storage.devid, "Light", storage.lightT, Datetime);
-  delay(100);
+  delay(delta);
   updateRate(storage.devid, "Humidity", storage.humidityT, Datetime);
-  delay(100);
+  delay(delta);
   updateRate(storage.devid, "GlobalTemp", storage.tempT, Datetime);
-  delay(100);
+  delay(delta);
   updateRate(storage.devid, "Sound", storage.soundT, Datetime);
-  delay(100);
+  delay(delta);
   updateRate(storage.devid, "CO2", storage.co2T, Datetime);
-  delay(100);
+  delay(delta);
   updateRate(storage.devid, "Particle", storage.pmT, Datetime);
-  delay(100);
+  delay(delta);
   updateRate(storage.devid, "CO", storage.coT, Datetime);
+  delay(delta);
 
   if (storage.coord == 'Y') {
     writeSDConfig(storage.devid, storage.room, "Coordinator", storage.project, storage.uploadT, storage.setupD, storage.teardownD, Datetime, storage.networkID);

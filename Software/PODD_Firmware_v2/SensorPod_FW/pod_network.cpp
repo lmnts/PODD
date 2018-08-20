@@ -43,6 +43,9 @@ char params[200];// insure params is big enough to hold your variables
 #define delayMillis 10000UL // Delay between establishing connection and making POST request
 unsigned long thisMillis = 0;
 unsigned long lastMillis = 0;
+unsigned long lastEthernetConnect = 0;  // maximum / 2
+unsigned long lastEthernetBegin = 0;
+#define ETHERNET_RECONNECT_TIME (5*60000UL)
 #define WIZ812MJ_ES_PIN 20 // WIZnet SPI chip-select pin
 #define WIZ812MJ_RESET_PIN 9 // WIZnet reset pin
 bool online = false;
@@ -369,20 +372,26 @@ void ethernetSetup() {
   pinMode(WIZ812MJ_ES_PIN, OUTPUT); 
   Ethernet.init(WIZ812MJ_ES_PIN);
 
+  ethernetBegin();
+}
 
+bool ethernetBegin() {
+  lastEthernetBegin = millis();
   Serial.println(F("Starting ethernet..."));
   unsigned long eth_timeout = 10000;
   xbeeGetMac(mac, MAC_LEN);
-  Serial.println(F("got mac..."));
+  //Serial.println(F("got mac..."));
   //Serial.write(mac,6);
   if(!Ethernet.begin(mac, eth_timeout)){
     Serial.println(F("failed. Readings will not be pushed to remote database."));
+    return false;
   }
   else {
     online = true;
     Serial.println(Ethernet.localIP());
     Udp.begin(localPort);
     getTimeFromWeb();
+    return true;
   }
 }
 
@@ -391,7 +400,35 @@ bool ethernetOnline() {
 }
 
 void ethernetMaintain() {
-    Ethernet.maintain(); // Must be performed regularly to maintain connection
+  unsigned long t0 = millis();
+  if (((t0 - lastEthernetConnect) >= ETHERNET_RECONNECT_TIME)
+      && ((t0 - lastEthernetBegin) >= ETHERNET_RECONNECT_TIME)) {
+    ethernetBegin();
+    return;
+  }
+  int stat = Ethernet.maintain(); // Must be performed regularly to maintain connection
+  switch(stat) {
+    case 0:
+      // No action performed
+      break;
+    case 1:
+      Serial.println(F("Ethernet: DHCP renewal failed."));
+      break;
+    case 2:
+      Serial.println(F("Ethernet: DHCP renewal succeeded."));
+      break;
+    case 3:
+      Serial.println(F("Ethernet: DHCP rebind failed."));
+      break;
+    case 4:
+      Serial.println(F("Ethernet: DHCP rebind succeeded."));
+      break;
+    default:
+      Serial.print(F("Ethernet: Unknown DHCP maintain error ("));
+      Serial.print(stat);
+      Serial.println(F(")."));
+      break;
+  }
 }
 
 void saveReading(String lstr, String rstr, String atstr, String gtstr, String sstr, String c2str, String p1str, String p2str, String cstr) {
@@ -438,8 +475,9 @@ void postReading(String DID, String ST, String R, String DT)
       #ifdef DEBUG
       writeDebugLog(F("Failed to upload sensor reading to remote. \n"));
       #endif
+    } else {
+      Serial.println(F("Uploaded sensor reading."));
     }
-    else Serial.println(F("Pass \n"));
   } else {
     String message = "V,"+DID+","+ST+","+R+","+DT+";"; 
     XBeeSend(message);
@@ -455,8 +493,11 @@ void updateRate(String DID, String ST, String R, String DT)
     //String Datetime = getStringDatetime();
     String temp = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "SampleRate=" + R + amp + "RateChange=" + DT;
     temp.toCharArray(p,200);
-    if(!postPage(getServer(),serverPort,pageName,p))Serial.print(F("Failed to update sensor rate on remote. "));
-    else Serial.print(F("Pass "));
+    if(!postPage(getServer(),serverPort,pageName,p)) {
+      Serial.println(F("Failed to update sensor rate on remote."));
+    } else {
+      Serial.println(F("Uploaded sensor rate."));
+    }
   } else {
     String message = "R,"+DID+","+ST+","+R+","+DT+";";
     Serial.println("XBee String: " + message);
@@ -473,8 +514,11 @@ void updateConfig(String DID, String Location, String Coordinator, String Projec
     String amp = "&";
     String temp = ("DeviceID=" + DID + amp + "Project=" + Project + amp + "Coordinator=" + Coordinator+ amp + "UploadRate=" + Rate + amp + "Location=" + Location + amp + "SetupDate=" + Setup + amp + "TeardownDate=" + Teardown + amp + "ConfigChange=" + Datetime + amp + "NetID=" + NetID);
     temp.toCharArray(p,200);
-    if(!postPage(getServer(),serverPort,pageName,p))Serial.print(F("Failed to update device configuration on remote. "));
-    else Serial.print(F("Pass "));
+    if(!postPage(getServer(),serverPort,pageName,p)) {
+      Serial.println(F("Failed to update device configuration on remote."));
+    } else {
+      Serial.println(F("Uploaded device configuration."));
+    }
   } else {
     String message = "S,"+DID+","+Location+","+Project+";"; // Out of order from function call to balance XBee packet size
     String message2 = "T,"+Coordinator+","+Rate+","+Setup+","+Teardown+","+Datetime+","+NetID+";"; // out of order from function call to balance XBee packet size
@@ -497,7 +541,8 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
 
   //Serial.print(F("connecting..."));
 
-  if(client.connect(domainBuffer,thisPort) == 1)
+  int stat;
+  if((stat = client.connect(domainBuffer,thisPort)) == 1)
   {
     //Serial.println(F("connected"));
     sprintf(outBuf,"POST %s HTTP/1.1",page);
@@ -509,10 +554,37 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
     client.println(outBuf);
 
     client.print(thisData);
+    lastEthernetConnect = millis();
   }
   else
   {
     //Serial.println(F("failed"));
+    switch(stat) {
+      case 1:
+        // Success
+        break;
+      case 0:
+        Serial.println(F("Remote server upload failed"));
+        break;
+      // Below are only for DNS lookup errors?
+      case -1:
+        Serial.println(F("Remote server upload failed: timed out"));
+        break;
+      case -2:
+        Serial.println(F("Remote server upload failed: invalid server"));
+        break;
+      case -3:
+        Serial.println(F("Remote server upload failed: truncated"));
+        break;
+      case -4:
+        Serial.println(F("Remote server upload failed: invalid response"));
+        break;
+      default:
+        Serial.print(F("Remote server upload failed: unknown error ("));
+        Serial.print(stat);
+        Serial.println(F(")."));
+        break;
+    }
     return 0;
   }
 

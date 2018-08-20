@@ -34,6 +34,7 @@ void xbeeGetNetwork(byte * netID);
 #define ETHERNET_EN 43
 
 void ethernetSetup();
+bool ethernetBegin();
 bool ethernetOnline();
 void ethernetMaintain();
 String formatTime();
