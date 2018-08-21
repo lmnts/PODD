@@ -23,10 +23,17 @@
  * Copyright (c) 2017 LMN Architects, LLC
  */
 
+// Ensure compilation set for 8 MHz CPU speed.
+// Can be set on Arduino IDE under Tools -> CPU Speed.
+#if defined(F_CPU) && (F_CPU != 8000000)
+#error "CPU speed must be set to 8 MHz"
+#endif
+
 #include <Wire.h>
 #include <avr/interrupt.h>
 
 // Project Files
+#include "pod_util.h"
 #include "pod_config.h"
 #include "pod_sensors.h"
 #include "pod_network.h"
@@ -39,9 +46,10 @@
 //--------------------------------------------------------------------------------------------- [setup]
 
 void setup() {
-
+  delay(5000);
   Serial.begin(9600);
   Serial.println(F("starting setup"));
+  delay(2000);
 
   xbeeSetup();
   Wire.begin(); // for humidity sensor

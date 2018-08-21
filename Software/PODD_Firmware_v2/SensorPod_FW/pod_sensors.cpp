@@ -11,6 +11,7 @@
 #include "pod_sensors.h"
 
 #include <AsyncDelay.h>
+#include <ClosedCube_OPT3001.h>
 #include "cozir.h"
 #include <Wire.h>
 #include <HIH61xx.h>
@@ -18,6 +19,10 @@
 // SOUND
 unsigned int knock;
 #define sampletime_DB 5000
+
+// Light
+#define OPT3001_ADDR 0x45
+ClosedCube_OPT3001 opt3001;
 
 // CO2
 SoftwareSerial nss(26, 25); //used pins 25 for rx, 26 for tx.
@@ -48,13 +53,27 @@ int endOfSampling = 0;
 #define lightPin A2
 
 // HIH
-#define HIH_ADDR 0x27
+//#define HIH_ADDR 0x27  // Hard-coded to this in HIH library
 HIH61xx<TwoWire> hih(Wire);
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
 
 void sensorSetup() {
+  // OPT3001 ambient light sensor
+  opt3001.begin(OPT3001_ADDR);
+  OPT3001_Config opt3001Config;
+  opt3001Config.RangeNumber = B1100;
+  opt3001Config.ConvertionTime = B1;  // [sic]
+  opt3001Config.ModeOfConversionOperation = B11;
+  OPT3001_ErrorCode opt3001Err = opt3001.writeConfig(opt3001Config);
+  if (opt3001Err == NO_ERROR) {
+    Serial.println(F("OPT3001 configured."));
+  } else {
+    Serial.print(F("OPT3001 configuration error: "));
+    Serial.println(opt3001Err);
+  }
+  
   // PM Sensor
   pinMode(PM_PIN_2_5, INPUT);
   pinMode(PM_PIN_10, INPUT);
@@ -63,7 +82,7 @@ void sensorSetup() {
 
   analogReference(EXTERNAL);
 
-  hih.initialise(HIH_ADDR);
+  hih.initialise();
   czr.SetOperatingMode(CZR_POLLING);
 }
 
@@ -166,8 +185,20 @@ float getRHHum() {
 }
 
 float getLight() {
-  float lightRaw = analogRead(lightPin);
-  return (lightRaw / 1023) * 3300; // TODO: comment this function, what's with these magic numbers
+  // OPT3001: Range is 0.01 - 80,000 lux with resolution as
+  // small as 0.01 lux.  Note with current configuration, it
+  // may take several seconds for readings to stabilize if
+  // the lighting condition changes drastically and rapidly.
+  // That is, don't use this at a rave.
+  OPT3001 reading = opt3001.readResult();
+  // Return unphysical value if sensor read error
+  if (reading.error != NO_ERROR) {
+    Serial.print(F("Error reading OPT3001 sensor ("));
+    Serial.print(reading.error);
+    Serial.println(F(")."));
+    return -1.0;
+  }
+  return reading.lux;
 }
 
 double getGlobeTemp() {

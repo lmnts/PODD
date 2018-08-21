@@ -7,6 +7,8 @@ Libraries found here are mainly pulled from various [GitHub](https://github.com)
 Those marked with (†) are not in the Arduino library repository and must be installed manually.
 - **AsyncDelay:**
   <https://github.com/stevemarple/AsyncDelay>
+- **ClosedCube OPT3001:**
+  <https://github.com/closedcube/ClosedCube_OPT3001_Arduino>
 - **Cozir CO2 Sensor (†):**
   <https://github.com/roder/cozir>
 

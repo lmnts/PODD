@@ -262,14 +262,14 @@ void humidityLog() {
   float AirTemp = getRHTemp();
   float RH = getRHHum();
   Serial.print("Humidity: ");
-  Serial.print(RH * 100);
+  Serial.print(RH);
   Serial.println(" % ");
   Serial.print("Temperature: ");
   Serial.print(AirTemp * 1.8 + 32);
   Serial.println(" F");
   String RHstr = "";
   String AirTempstr = "";
-  RHstr = String (RH * 100);
+  RHstr = String (RH);
   AirTempstr = String (AirTemp * 1.8 + 32);
   saveReading("", RHstr, AirTempstr, "", "", "", "", "", "");
 }
