@@ -41,7 +41,7 @@
 
 //--------------------------------------------------------------------------------------------- [Default Configs and Variables]
 
-#define LED_PIN 6
+#define LED_PIN LED_BUILTIN
 
 //--------------------------------------------------------------------------------------------- [setup]
 
@@ -91,9 +91,13 @@ void setup() {
     //Disable Ethernet for Drones
     digitalWrite(ETHERNET_EN, LOW);
 
-    Serial.println(F("powering down USB"));
-    Serial.end();
-    USBCON |= (1<<FRZCLK); // Disable USB to save power.
+    #if defined(DEBUG)
+      Serial.println(F("DEBUG: Drone serial output will not be disabled."));
+    #else
+      Serial.println(F("powering down USB"));
+      Serial.end();
+      USBCON |= (1<<FRZCLK); // Disable USB to save power.
+    #endif
   }
   EIFR |= (1<<INTF2); // Clear INT2 flag
   EIMSK |= (1<<INT2); // Enable INT2 (same pin as USART Rx)
@@ -104,7 +108,7 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
   
   #ifdef DEBUG
-  writeDebugLog(F("Fxn: setup()"));
+  //writeDebugLog(F("Fxn: setup()"));
   #endif
 
   sei(); //Enable interrupts
