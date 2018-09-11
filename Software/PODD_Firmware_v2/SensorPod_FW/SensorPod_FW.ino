@@ -83,6 +83,9 @@ void setup() {
   setupSensorTimers();
 
   // power optimizations
+  if (getRatePM() <= 0) {
+    digitalWrite(PM_ENABLE, LOW);
+  }
   if(! getModeCoord()){
     if(getRatePM() > 120) {
       digitalWrite(PM_ENABLE, LOW);
@@ -91,6 +94,7 @@ void setup() {
     //Disable Ethernet for Drones
     digitalWrite(ETHERNET_EN, LOW);
 
+    //#define DEBUG
     #if defined(DEBUG)
       Serial.println(F("DEBUG: Drone serial output will not be disabled."));
     #else
@@ -99,13 +103,19 @@ void setup() {
       USBCON |= (1<<FRZCLK); // Disable USB to save power.
     #endif
   }
-  EIFR |= (1<<INTF2); // Clear INT2 flag
-  EIMSK |= (1<<INT2); // Enable INT2 (same pin as USART Rx)
+  
+  //Serial.println(F("DEBUG: Ethernet disabled."));
+  //digitalWrite(ETHERNET_EN, LOW);
   
   // turn off LED to save power
   // by the time we get here, the user has either configured the SensorPod
   // or it's been around a minute and a half and the setup has timed out
   digitalWrite(LED_PIN, LOW);
+  
+  // Clear incoming XBee buffer, which may contain garbage
+  // and/or incomplete packets at this point.
+  readXBee();
+  resetXBeeBuffer();
   
   #ifdef DEBUG
   //writeDebugLog(F("Fxn: setup()"));

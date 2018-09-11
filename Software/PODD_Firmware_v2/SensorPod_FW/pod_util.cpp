@@ -40,6 +40,29 @@
 // Functions ===================================================================
 
 //------------------------------------------------------------------------------
+// The amount of free memory, as the size of the space between the heap
+// and the stack.  See:
+//   https://playground.arduino.cc/Code/AvailableMemory
+//   https://github.com/arduino/Arduino/issues/5289
+//   http://www.controllerprojects.com/2011/05/23/determining-sram-usage-on-arduino/ [defunct]
+// Note there may be additional unused space within the heap, but this is
+// the maximum free RAM available to the stack.
+// 
+size_t freeRAM() {
+  extern int __heap_start;
+  extern int *__brkval;
+  // This contains end of heap location and itself is located at edge of stack
+  const size_t heaploc = (size_t)(__brkval == 0 ? &__heap_start : __brkval);
+  if ((size_t)(&heaploc) > heaploc) {
+    return (size_t)(&heaploc) - heaploc;
+  } else {
+    // This is bad....
+    return 0;
+  }
+}
+
+
+//------------------------------------------------------------------------------
 // Writes to serial the status of the given pin, with optional
 // label to include in output.  Note this gives digital states:
 // if pin is configured for analog output (PWM or something else),

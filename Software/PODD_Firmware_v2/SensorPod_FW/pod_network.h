@@ -12,7 +12,27 @@
 
 //--------------------------------------------------------------------------------------------- [XBee Management]
 
-#define BUFFXBEE_SIZE 128
+#define BUFFXBEE_SIZE 256
+
+// XBee packet buffering
+#define XBEE_BUFFER_SIZE 256
+
+// Use ASCII "start of text" and "end of text" control characters
+// to mark the start and end of packets.  The use of both allows
+// incomplete packets to be identified during buffer overruns.
+#define PACKET_START_TOKEN '\x02'
+#define PACKET_END_TOKEN '\x03'
+
+void setupXBee();
+void readXBeeISR();
+void readXBee();
+void sendXBee(const String packet);
+bool holdXBeeBuffer();
+void releaseXBeeBuffer();
+void resetXBeeBuffer();
+void cleanXBeeBuffer(const bool cleanStart=true, const bool cleanEnd=true);
+String getXBeeBufferPacket();
+void processXBee();
 
 void xbeeSetup();
 void xbeeGetMac(byte * macL, uint8_t max_mac_len);

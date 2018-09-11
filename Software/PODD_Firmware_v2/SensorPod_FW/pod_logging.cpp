@@ -51,12 +51,16 @@ void setupRTC() {
   
   // Get time/date values, so we can set alarms
   rtc.update();
+  // NOTE: Interrupt pin not attached and alarms not used,
+  // so we disable this code [CS 2018-08-25]
+  /*
   // Configure Alarm(s):
   rtc.enableAlarmInterrupt();
   rtc.setAlarm1(logint);
   // Set alarm2 to alert when minute increments by 1
   bool alarm = true;
   rtc.setAlarm2(0, 8, 1, alarm); // Alarm2 8:00 on Monday (1)
+  */
 }
 
 void setupPodSD() {

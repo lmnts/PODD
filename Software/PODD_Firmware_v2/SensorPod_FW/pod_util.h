@@ -47,6 +47,9 @@
 
 // Functions ===================================================================
 
+// Returns the amount of RAM available to the stack and/or heap.
+size_t freeRAM();
+
 // Writes to serial the status of the given pin, with optional
 // label to include in output.
 void pinCheck(const int pin, const String s="");

@@ -14,7 +14,7 @@
 #ifndef Cozir_h
 #define Cozir_h
 
-#include "SoftwareSerial.h"
+#include "Stream.h"
 
 #if defined(ARDUINO) && ARDUINO >= 100
   #include "Arduino.h"
@@ -55,7 +55,9 @@
 class COZIR
 {
   public:
-	COZIR(SoftwareSerial&);// : CZR_Serial(nss)
+  // Switch to Stream to allow for various Serial implementations
+	//COZIR(SoftwareSerial&);// : CZR_Serial(nss)
+	COZIR(Stream&);// : CZR_Serial(nss)
 	
 	void SetOperatingMode(uint8_t mode);
 		
@@ -86,7 +88,7 @@ class COZIR
 	void GetConfiguration();
   
   private:
-    SoftwareSerial& CZR_Serial;
+    Stream& CZR_Serial;
     char buffer[20];
 	void Command(const char* );
 	uint16_t Request(const char* );

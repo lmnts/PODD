@@ -12,15 +12,20 @@
 //
 
 #include "Cozir.h"
-#include "SoftwareSerial.h"
+#include "Stream.h"
 
 ////////////////////////////////////////////////////////////
 //
 // CONSTRUCTOR
 //
-COZIR::COZIR(SoftwareSerial& nss) : CZR_Serial(nss)
+// Use Stream to allow for various Serial implementations
+COZIR::COZIR(Stream& nss) : CZR_Serial(nss)
 {
-  CZR_Serial.begin(9600);
+  // Remove serial begin statement to allow serial
+  // to be explicitly started/stopped in main software.
+  // That means Serial.begin() must be called in the
+  // main code prior to using any routines here.
+  //CZR_Serial.begin(9600);
 }
 
 ////////////////////////////////////////////////////////////
@@ -246,7 +251,7 @@ uint16_t COZIR::Request(const char* s)
     delay(DELAY_STEP);
   }
   // Ensure entire response arrives
-  delay(2);
+  delay(10);
 
   // All commands return a single character indicating the data type
   // or command, a space, then an integer value (except for 'Y' and

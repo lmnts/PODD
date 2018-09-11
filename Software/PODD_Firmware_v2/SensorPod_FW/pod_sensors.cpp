@@ -10,6 +10,8 @@
 
 #include "pod_sensors.h"
 
+//#include <SoftwareSerial.h>
+#include <NeoSWSerial.h>
 #include <AsyncDelay.h>
 #include <ClosedCube_OPT3001.h>
 #include "cozir.h"
@@ -25,7 +27,23 @@ unsigned int knock;
 ClosedCube_OPT3001 opt3001;
 
 // CO2
-SoftwareSerial nss(26, 25); //used pins 25 for rx, 26 for tx.
+// Note Rx/Tx labeled for Teensy side of serial
+// (reverse of Rx/Tx label on CO2 sensor)
+#define CO2_PIN_RX PIN_B6
+#define CO2_PIN_TX PIN_B5
+// WARNING: Software serial implementations can interfere with
+// other serial interfaces as processing routines prevent
+// necessary interrupts from occurring in a timely manner.
+// Alternative software implementations such as AltSoftSerial
+// and NeoSWSerial should work better than the builtin
+// SoftwareSerial, but they have their own issues: AltSoftSerial
+// requires specific Rx/Tx pins and NeoSWSerial uses one of the
+// hardware timers (hopefully nothing else is trying to use it...).
+//SoftwareSerial nss(CO2_PIN_RX,CO2_PIN_TX);
+NeoSWSerial nss(CO2_PIN_RX,CO2_PIN_TX);
+// Note COZIR library modified to remove Serial.begin() call in
+// constructor as we do _not_ want the serial interface running
+// except when we actually want to communicate with the sensor.
 COZIR czr(nss);
 
 // PM Sensor
@@ -83,7 +101,17 @@ void sensorSetup() {
   analogReference(EXTERNAL);
 
   hih.initialise();
+
+  // COZIR sensor communicates at 9600 baud
+  nss.begin(9600);
+  nss.listen();
   czr.SetOperatingMode(CZR_POLLING);
+  // Suspend serial interface as this software serial can disrupt
+  // other serial interfaces (and we do not need it except when
+  // communicating with CO2 sensor).
+  nss.ignore();
+  //Serial.println("DEBUGGING: Turning off software serial (CO2 interface).");
+  //nss.end();
 }
 
 bool verifySensors() {
@@ -239,7 +267,10 @@ double getSound() {
 }
 
 int getCO2() {
+  // Only enable software serial during interaction
+  nss.listen();
   int c = czr.CO2();
+  nss.ignore();
   return c;
 }
 

@@ -12,11 +12,13 @@ Those marked with (†) are not in the Arduino library repository and must be in
 - **Cozir CO2 Sensor (†):**
   <https://github.com/roder/cozir>
 
-  The version included here has been modified from the original to improve read timing and to address compiler warnings.
+  The version included here has been modified from the original to improve read timing, address compiler warnings, allow for generic serial interfaces, and remove a Serial.begin() statement (the PODD firmware will control the serial interfaces).
 - **HIH61xx:**
   <https://github.com/stevemarple/HIH61xx>
   
   This library is also valid for the 8XXX series of Honeywell HumidIcon humidity/temperature sensors.
+- **NeoSWSerial:**
+  <https://github.com/SlashDevin/NeoSWSerial>
 - **SparkFun DS3234 RTC (†):**
   <https://github.com/sparkfun/SparkFun_DS3234_RTC_Arduino_Library>
 - **Time library:**
@@ -25,4 +27,6 @@ Those marked with (†) are not in the Arduino library repository and must be in
   <https://github.com/PaulStoffregen/TimeAlarms>
   
   Though this library is available in the Arduino library repository, the PODD firmware requires modifications in the GitHub repo that have not made it into the Arduino repository yet (version 1.5.1 or later is required).
+- **TimerOne:**
+  <https://github.com/PaulStoffregen/TimerOne>
 
