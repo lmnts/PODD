@@ -20,13 +20,6 @@
 
 #define xbee Serial1
 
-// XBee packet buffering (old)
-volatile char BuffXBee[BUFFXBEE_SIZE];
-volatile unsigned int BuffHead = 0;
-volatile unsigned int BuffTail = 0;
-volatile unsigned int BuffOverruns = 0;
-volatile bool BuffOverrun = false;
-
 // XBee packet buffering
 volatile char xbeeBuffer[XBEE_BUFFER_SIZE];
 volatile size_t xbeeBufferHead = 0;
@@ -81,23 +74,6 @@ bool online = false;
 
 //--------------------------------------------------------------------------------------------- [XBee Management]
 
-void xbeeSetup() {
-  xbee.begin(9600);
-
-  BuffHead = 0;
-  BuffTail = 0;
-
-  xbeeBufferHead = 0;
-  xbeeBufferElements = 0;
-  xbeeBufferOverrun = 0;
-  xbeeBufferHold = false;
-  // Use timer-based, interrupt-driven function calls to
-  // ensure data is getting pulled from the Arduino buffer
-  // before it can fill.
-  Timer1.initialize(XBEE_READ_INTERVAL);
-  Timer1.attachInterrupt(readXBeeISR);
-}
-
 /* Initialize the XBee serial interface and buffering mechanism. */
 void setupXBee() {
   // Start serial interface between XBee and microcontroller.
@@ -123,6 +99,7 @@ void setupXBee() {
   Timer1.attachInterrupt(readXBeeISR);
 }
 
+
 /* Reads data from the XBee serial interface into a circular buffer.
    A wrapper to the readXBee() function that checks a flag to avoid
    modifying the buffer if the buffer is being accessed elsewhere,
@@ -137,6 +114,7 @@ void readXBeeISR() {
   //Serial.println(millis());
   readXBee();
 }
+
 
 /* Reads data from the XBee serial interface into a circular buffer.
    Note Arduino uses interrupts to grab hardware serial data as it
@@ -183,6 +161,9 @@ void readXBee() {
   #endif
 }
 
+
+/* Send the given packet over the XBee network to the coordinator.
+   Adds start & stop tokens to help coordinator with packet parsing. */
 void sendXBee(const String packet)
 {
   // Serial output should be flushed here as activity may
@@ -225,6 +206,7 @@ void sendXBee(const String packet)
   delay(100);
 }
 
+
 /* Prevent the XBee buffer from being modified by ISR.
    Returns the prior hold state. */
 bool holdXBeeBuffer() {
@@ -238,6 +220,7 @@ bool holdXBeeBuffer() {
   return prevState;
 }
 
+
 /* Allows the XBee buffer to be modified by ISR. */
 void releaseXBeeBuffer() {
   // Disable interrupts to prevent ISR from running during routine.
@@ -247,6 +230,7 @@ void releaseXBeeBuffer() {
   xbeeBufferHold = false;
   SREG = oldSREG;  // Restore interrupt status
 }
+
 
 /* Resets the XBee buffer to its empty state. */
 void resetXBeeBuffer() {
@@ -259,6 +243,7 @@ void resetXBeeBuffer() {
   xbeeBufferOverrun = 0;
   SREG = oldSREG;  // Restore interrupt status
 }
+
 
 /* Removes buffer data before the first packet and or after the
    last complete packet. The latter should be performed on a
@@ -290,6 +275,7 @@ void cleanXBeeBuffer(const bool cleanStart, const bool cleanEnd) {
   }
   if (!wasHeld) releaseXBeeBuffer();
 }
+
 
 /* Returns the next available XBee data packet from the XBee buffer,
    or an empty string if no packet is available. */
@@ -348,6 +334,7 @@ String getXBeeBufferPacket() {
       packetBuf[pos] = xbeeBuffer[(startLoc+1+pos) % XBEE_BUFFER_SIZE];
     }
     packetBuf[packetBufSize-1] = '\0';
+    xbeeBufferElements = (xbeeBufferHead - endLoc + 1) % XBEE_BUFFER_SIZE;
     if (!wasHeld) releaseXBeeBuffer();
     return packetBuf;
   }
@@ -356,14 +343,15 @@ String getXBeeBufferPacket() {
   return EMPTY_STRING;
 }
 
+
+/* Retrieves the next available XBee packet and processes it: packet
+   data is extracted and then passed on the the remote database.
+   If a full packet is not currently available, this function returns
+   immediately. */
 void processXBee() {
   // Prevent buffer from being altered by ISR
   holdXBeeBuffer();
   
-  //noInterrupts();
-  //xbeeBufferHold = true;
-  //interrupts();
-
   // Not necessary if an ISR is used to pull data from the
   // Arduino serial buffer, but it doesn't hurt.
   readXBee();
@@ -371,6 +359,10 @@ void processXBee() {
   // If there was a buffer overrun, remove any incomplete packet
   // at the end.
   if (xbeeBufferOverrun > 0) {
+    Serial.print("Warning: XBee buffer overran by ");
+    Serial.print(xbeeBufferOverrun);
+    Serial.println(" bytes.  Some data lost.");
+    Serial.flush();
     cleanXBeeBuffer(true,true);
     xbeeBufferOverrun = 0;
   }
@@ -382,7 +374,6 @@ void processXBee() {
   releaseXBeeBuffer();
 
   // Cycle over packets until we find a valid one.
-  // TIMING NOTE: 
   String packet;
   bool uploaded = false;
   while((packet = getXBeeBufferPacket()).length() > 0) {
@@ -391,23 +382,14 @@ void processXBee() {
     Serial.flush();
     switch(packet.charAt(0)) {
       case 'V':
-//        noInterrupts();
-//        xbeeBufferHold = false;
-//        interrupts();
         xbeeReading(packet);
         uploaded = true;
         break;
       case 'R':
-//        noInterrupts();
-//        xbeeBufferHold = false;
-//        interrupts();
         xbeeRate(packet);
         uploaded = true;
         break;
       case 'S':
-//        noInterrupts();
-//        xbeeBufferHold = false;
-//        interrupts();
         set1 = packet;
         if (set1.length() > 0 && set2.length() > 0) {
           xbeeSettings(set1, set2);
@@ -417,9 +399,6 @@ void processXBee() {
         }
         break;
       case 'T':
-//        noInterrupts();
-//        xbeeBufferHold = false;
-//        interrupts();
         set2 = packet;
         if (set1.length() > 0 && set2.length() > 0) {
           xbeeSettings(set1, set2);
@@ -439,187 +418,6 @@ void processXBee() {
     // Use below to avoid compiler warning if above commented...
     (void)uploaded;
   }
-  
-  // Allow ISR to add data to buffer
-//  noInterrupts();
-//  xbeeBufferHold = false;
-//  interrupts();
-}
-
-void uploadXBee(){
-  String incoming;
-
-  /*
-  //cli();
-  if (xbee.available()) {
-    Serial.print(F("XBee read: "));
-    while (xbee.available()){
-      BuffXBee[BuffHead] = xbee.read();
-      if(BuffXBee[BuffHead] != -1) {
-        Serial.print(BuffXBee[BuffHead]);
-        BuffHead++;
-        if(BuffHead >= BUFFXBEE_SIZE)
-          BuffHead = 0;
-        if (BuffHead == BuffTail) {
-          BuffOverrun = true;
-        }
-        if (BuffOverrun) {
-          BuffOverruns++;
-        }
-      }
-    }
-    Serial.println();
-  }
-  //sei();
-
-  if (BuffOverrun) {
-    Serial.print("WARNING: XBee buffer overran by ");
-    Serial.print(BuffOverruns);
-    Serial.println(" bytes");
-    BuffOverrun = false;
-    BuffOverruns = 0;
-    BuffHead = 0;
-    BuffTail = 0;
-  }
-  */
-  
-  // Prevent buffer from being altered by ISR
-  noInterrupts();
-  xbeeBufferHold = true;
-  interrupts();
-
-  // Not necessary if an ISR is used to pull data from the
-  // Arduino serial buffer, but it doesn't hurt.
-  //Serial.print(F("readXBee:    "));
-  //Serial.println(millis());
-  readXBee();
-  
-  // If there was a buffer overrun, remove any incomplete packet
-  // at the end.
-  if (xbeeBufferOverrun > 0) {
-    Serial.print("WARNING: XBee buffer overran by ");
-    Serial.print(xbeeBufferOverrun);
-    Serial.println(" bytes");
-    //cleanXBeeBuffer(true,true);
-    xbeeBufferHead = 0;
-    xbeeBufferElements = 0;
-    xbeeBufferOverrun = 0;
-  }
-
-  BuffHead = xbeeBufferHead;
-  BuffTail = (xbeeBufferHead - xbeeBufferElements) % XBEE_BUFFER_SIZE;
-
-  if (BuffTail == BuffHead) {
-    //Serial.println("Nothing in buffer to process.");
-    noInterrupts();
-    xbeeBufferHold = false;
-    interrupts();
-    return; // we have nothing in the buffer
-  }
-  
-  // first get the type of packet
-  char pkt_type = xbeeBuffer[BuffTail];
-
-  // then get the packet itself
-  unsigned int str_idx = BuffTail;
-  while (xbeeBuffer[str_idx] != ';' && str_idx != BuffHead) {
-    incoming.concat(xbeeBuffer[str_idx]);
-    str_idx++;
-    if (str_idx >= XBEE_BUFFER_SIZE) {
-      str_idx = 0;
-    }
-  }
-
-  // we got a full packet
-  if ((str_idx != BuffHead) && xbeeBuffer[str_idx] == ';') {
-    BuffTail = str_idx + 1;
-    if (BuffTail >= XBEE_BUFFER_SIZE) {
-      BuffTail = 0;
-    }
-  // Reached head before finding end of packet
-  } else {
-    // we got something corrupt, so drop it
-    if (incoming.length() > 64) {
-      BuffTail = str_idx;
-    }
-    // no full packet (yet)
-    noInterrupts();
-    xbeeBufferHold = false;
-    interrupts();
-    return;
-  }
-  /*
-  if (xbeeBuffer[str_idx] == ';' && str_idx != BuffHead) {
-    // we got a full packet
-    BuffTail = str_idx + 1;
-    if (BuffTail >= XBEE_BUFFER_SIZE) {
-      BuffTail = 0;
-    }
-  } else if (incoming.length() > 64) {
-    // we got something corrupt, so drop it
-    BuffTail = str_idx + 1;
-    while (BuffTail != BuffHead && xbeeBuffer[BuffTail] != ';') {
-      BuffTail++;
-      if (BuffTail >= XBEE_BUFFER_SIZE) {
-        BuffTail = 0;
-      }
-    }
-    noInterrupts();
-    xbeeBufferHold = false;
-    interrupts();
-    return;
-  } else {
-    // didn't get a full packet, but we may yet
-    noInterrupts();
-    xbeeBufferHold = false;
-    interrupts();
-    return;
-  }
-  */
-  
-  Serial.println("XBee packet: "+incoming);
-  //Serial.print("Free RAM: ");
-  //Serial.println(freeRAM());
-  Serial.flush();
-  
-  // TIMING NOTE: The web upload can take ~ 1 second to complete,
-  // during which the XBee is not being read.  This leads to
-  // the Arduino 64-byte buffer overflowing if 2+ XBee packets
-  // arrive during this time....
-  switch(pkt_type) {
-    case 'V':
-      xbeeReading(incoming);
-      break;
-    case 'R':
-      xbeeRate(incoming);
-      break;
-    case 'S':
-      set1 = (incoming);
-      if (set1.length() > 0 && set2.length() > 0) {
-        xbeeSettings(set1, set2);
-        set1 = "";
-        set2 = "";
-      }
-      break;
-    case 'T':
-      set2 = (incoming);
-      if (set1.length() > 0 && set2.length() > 0) {
-        xbeeSettings(set1, set2);
-        set1 = "";
-        set2 = "";
-      }
-      break;
-    default:
-      // invalid packet, do nothing
-      break;
-  }
-  
-  xbeeBufferElements = (xbeeBufferHead - BuffTail) % XBEE_BUFFER_SIZE;
-  
-  // Allow ISR to add data to buffer
-  noInterrupts();
-  xbeeBufferHold = false;
-  interrupts();
 }
 
 
@@ -761,33 +559,6 @@ void xbeeReading(String incoming){
   postReading(did,sensor,val,datetime);
 }
 
-
-void XBeeSend(String message)
-{
-  #ifdef DEBUG
-  writeDebugLog(F("Fxn: XBeeSend"));
-  #endif
-  char tx[message.length()+1];
-  message.toCharArray(tx,message.length()+1);
-
-  Serial.print("XBee send: ");
-  Serial.println(tx);
-  //Serial.print("Free RAM: ");
-  //Serial.println(freeRAM());
-  Serial.flush();
-
-  //noInterrupts();
-  xbee.write(tx);
-  // Give time for serial interface ISRs to run
-  //delay(50);
-  // Give even more time for serial interface/XBee to run
-  //delay(250);
-  // Wait for serial output buffer to empty, then give
-  // time for XBee to upload
-  xbee.flush();
-  //interrupts();
-  delay(100);
-}
 
 void xbeeRequestSetting(String setting){
   xbeeCommandMode();
@@ -981,8 +752,8 @@ void postReading(String DID, String ST, String R, String DT)
       Serial.println(F("Uploaded sensor reading (")+ST+" @ "+DID+").");
     }
   } else {
-    String message = "V,"+DID+","+ST+","+R+","+DT+";"; 
-    XBeeSend(message);
+    String message = "V,"+DID+","+ST+","+R+","+DT; 
+    sendXBee(message);
     delay(1000);
   }
 }
@@ -1001,9 +772,9 @@ void updateRate(String DID, String ST, String R, String DT)
       Serial.println(F("Uploaded sensor rate."));
     }
   } else {
-    String message = "R,"+DID+","+ST+","+R+","+DT+";";
+    String message = "R,"+DID+","+ST+","+R+","+DT;
     Serial.println("XBee String: " + message);
-    XBeeSend(message);
+    sendXBee(message);
     delay(2500);
   }
 }
@@ -1022,12 +793,12 @@ void updateConfig(String DID, String Location, String Coordinator, String Projec
       Serial.println(F("Uploaded device configuration."));
     }
   } else {
-    String message = "S,"+DID+","+Location+","+Project+";"; // Out of order from function call to balance XBee packet size
-    String message2 = "T,"+Coordinator+","+Rate+","+Setup+","+Teardown+","+Datetime+","+NetID+";"; // out of order from function call to balance XBee packet size
+    String message = "S,"+DID+","+Location+","+Project; // Out of order from function call to balance XBee packet size
+    String message2 = "T,"+Coordinator+","+Rate+","+Setup+","+Teardown+","+Datetime+","+NetID; // out of order from function call to balance XBee packet size
     Serial.println("XBee String: " + message + message2+" " + message.length() + " " + message2.length());
-    XBeeSend(message);
+    sendXBee(message);
     delay(2000);
-    XBeeSend(message2);
+    sendXBee(message2);
   }
 }
 

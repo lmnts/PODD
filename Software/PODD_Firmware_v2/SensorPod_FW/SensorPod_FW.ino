@@ -51,7 +51,7 @@ void setup() {
   Serial.println(F("starting setup"));
   delay(2000);
 
-  xbeeSetup();
+  setupXBee();
   Wire.begin(); // for humidity sensor
 
   setupRTC();

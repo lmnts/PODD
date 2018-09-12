@@ -157,7 +157,7 @@ void handleLoopLogging() {
   // do any tasks required by the config in loop
   if(getModeCoord()) {
     Alarm.delay(0);
-    uploadXBee();
+    processXBee();
   }
   else {
     Alarm.delay(1000); // Checks all alarm.timerRepeat events from setup()

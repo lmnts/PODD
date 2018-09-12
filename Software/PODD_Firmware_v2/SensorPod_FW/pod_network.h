@@ -12,8 +12,6 @@
 
 //--------------------------------------------------------------------------------------------- [XBee Management]
 
-#define BUFFXBEE_SIZE 256
-
 // XBee packet buffering
 #define XBEE_BUFFER_SIZE 256
 
@@ -34,14 +32,11 @@ void cleanXBeeBuffer(const bool cleanStart=true, const bool cleanEnd=true);
 String getXBeeBufferPacket();
 void processXBee();
 
-void xbeeSetup();
 void xbeeGetMac(byte * macL, uint8_t max_mac_len);
-void uploadXBee();
 void xbeeConfig();
 void xbeeRate(String incoming);
 void xbeeSettings(String incoming, String incoming2);
 void xbeeReading(String incoming);
-void XBeeSend(String message);
 bool xbeeCommandMode();
 void xbeeRequestSetting(String setting);
 void xbeeUpdateSetting(String setting, String val);
