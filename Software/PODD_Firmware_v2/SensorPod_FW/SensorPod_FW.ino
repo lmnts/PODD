@@ -51,7 +51,7 @@ void setup() {
   Serial.println(F("starting setup"));
   delay(2000);
 
-  setupXBee();
+  initXBee();
   Wire.begin(); // for humidity sensor
 
   setupRTC();
@@ -94,7 +94,7 @@ void setup() {
     //Disable Ethernet for Drones
     digitalWrite(ETHERNET_EN, LOW);
 
-    //#define DEBUG
+    #define DEBUG
     #if defined(DEBUG)
       Serial.println(F("DEBUG: Drone serial output will not be disabled."));
     #else
@@ -111,11 +111,12 @@ void setup() {
   // by the time we get here, the user has either configured the SensorPod
   // or it's been around a minute and a half and the setup has timed out
   digitalWrite(LED_PIN, LOW);
-  
-  // Clear incoming XBee buffer, which may contain garbage
-  // and/or incomplete packets at this point.
-  readXBee();
-  resetXBeeBuffer();
+
+  // Begin background process to pull data from the XBee for later
+  // processing.  Currently only necessary for the coordinator.
+  if(getModeCoord()){
+    startXBee();
+  }
   
   #ifdef DEBUG
   //writeDebugLog(F("Fxn: setup()"));

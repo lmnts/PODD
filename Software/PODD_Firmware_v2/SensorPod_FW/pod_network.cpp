@@ -74,8 +74,9 @@ bool online = false;
 
 //--------------------------------------------------------------------------------------------- [XBee Management]
 
-/* Initialize the XBee serial interface and buffering mechanism. */
-void setupXBee() {
+/* Initialize the XBee serial interface and buffering mechanism.
+   Must call startXBee() to start listening to XBee. */
+void initXBee() {
   // Start serial interface between XBee and microcontroller.
   // Note there are multiple levels of buffers: the XBee
   // contains send/receive buffers and the Arduino core libraries
@@ -87,10 +88,24 @@ void setupXBee() {
   
   // Initialize ring buffer for data that came across the XBee
   // network.
-  xbeeBufferHead = 0;
-  xbeeBufferElements = 0;
-  xbeeBufferOverrun = 0;
+  xbeeBufferHold = true;
+  resetXBeeBuffer();
+}
+
+
+/* Begin XBee processing.  Starts a timer-based ISR to grab data
+   from the Arduino buffer into a ring buffer for more leisurely
+   processing. */
+void startXBee() {
+  // Clear buffers and start fresh.
+  // First disable interrupts to prevent ISRs from changing buffers.
+  // Store previous interrupt state so we can restore it afterwards.
+  uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+  cli();  // Disable interrupts
+  xbee.clear();
+  resetXBeeBuffer();
   xbeeBufferHold = false;
+  SREG = oldSREG;  // Restore interrupt status
   
   // Use timer-based, interrupt-driven function calls to
   // ensure data is getting pulled from the Arduino buffer

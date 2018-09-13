@@ -21,7 +21,8 @@
 #define PACKET_START_TOKEN '\x02'
 #define PACKET_END_TOKEN '\x03'
 
-void setupXBee();
+void initXBee();
+void startXBee();
 void readXBeeISR();
 void readXBee();
 void sendXBee(const String packet);
