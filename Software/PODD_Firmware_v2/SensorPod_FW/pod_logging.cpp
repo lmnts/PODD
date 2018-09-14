@@ -19,10 +19,9 @@
 #include <SparkFunDS3234RTC.h>
 #include <SD.h>
 
-// Increase number of available alarms.
-// Must define this prior to first include of TimeAlarms.h
-// or the too-small default number will be used.
-#define dtNBR_ALARMS 12
+// This library must be modified to increase the maximum number
+// of available alarms by changing dtNBR_ALARMS  (default is 6,
+// should allow for 10-12).
 #include <TimeAlarms.h>
 
 

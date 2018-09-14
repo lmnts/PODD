@@ -25,8 +25,8 @@ Those marked with (†) are not in the Arduino library repository and must be in
   <https://github.com/PaulStoffregen/Time>
 - **TimeAlarms (†):**
   <https://github.com/PaulStoffregen/TimeAlarms>
-  
-  Though this library is available in the Arduino library repository, the PODD firmware requires modifications in the GitHub repo that have not made it into the Arduino repository yet (version 1.5.1 or later is required).
+
+  The version included here has been modified from the original to increase the maximum number of timers/alarms.
 - **TimerOne:**
   <https://github.com/PaulStoffregen/TimerOne>
 

@@ -8,7 +8,9 @@
 
 #if !defined(dtNBR_ALARMS )
 #if defined(__AVR__)
-#define dtNBR_ALARMS 6   // max is 255
+//#define dtNBR_ALARMS 6   // max is 255
+// PODD modification: Need a larger number of timers.
+#define dtNBR_ALARMS 12  // max is 255
 #elif defined(ESP8266)
 #define dtNBR_ALARMS 20  // for esp8266 chip - max is 255
 #else
