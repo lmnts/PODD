@@ -46,7 +46,7 @@ NeoSWSerial nss(CO2_PIN_RX,CO2_PIN_TX);
 // except when we actually want to communicate with the sensor.
 COZIR czr(nss);
 
-// PM Sensor
+// Particulate Matter (PM) Sensor
 AsyncDelay samplingPM;
 #define sampletime_PM 8000UL
 #define PM_PIN_2_5 16 // Pin number switched with PM_PIN_10 due to pinout being reversed in schematic
@@ -60,6 +60,32 @@ float ratio2 = 0;
 float concentration2_5 = 0;
 float concentration10 = 0;
 int endOfSampling = 0;
+
+// Particulate Matter (PM) Sensor: SM-PWM-01C
+// Pins for ~ 2 um and ~ 10 um dust particle pulses.
+// These may be switched from schematics due to ambiguity in sensor
+// documentation (reversing header flips only these two pins).
+#define PM_PIN_P1 PIN_C6
+#define PM_PIN_P2 PIN_C5
+// Time scale (ms) over which to generate a moving average of
+// the sensor readings.  Set to 0 to use current values only.
+#define PM_SAMPLE_WEIGHTING_TIME 0
+// Various calculation quantities.
+// Volatile necessary when used in both interrupts and main thread.
+// UNITS: Sample times in milliseconds, pulse times in microseconds.
+//        If data sheet suggestion of ~ 100 ms pulse lengths, then
+//        milliseconds might be sufficient for all values.
+volatile bool pmSampling = false;  // Indicate if currently running
+unsigned long pmLastSampleTime = ((unsigned long)(-1) >> 1); // Last calculation time [ms]
+volatile unsigned long pmSampleT0 = 0;  // Sampling start time [ms]
+volatile unsigned long pmPulse1T0 = 0;  // Pulse 1 start time [us]
+volatile unsigned long pmPulse2T0 = 0;  // Pulse 2 start time [us]
+volatile unsigned long pmPulse1TSum = 0;  // Pulse 1 cumulative time (low) [us]
+volatile unsigned long pmPulse2TSum = 0;  // Pulse 2 cumulative time (low) [us]
+volatile uint8_t pmPulse1State = HIGH;  // Current pulse 1 state
+volatile uint8_t pmPulse2State = HIGH;  // Current pulse 2 state
+float pmDensity02 = 0.0;  // Density of ~ 2 um dust (ug/m^3)
+float pmDensity10 = 0.0;  // Density of ~ 10 um dust (ug/m^3)
 
 // CO
 //#define numCoRead 4
@@ -326,4 +352,229 @@ float getPM2_5() {
 float getPM10() {
   return concentration10;
 }
+
+
+/* Initializes the particulate matter sensor, but does not power it up. */
+void initPM() {
+  pinMode(PM_PIN_P1, INPUT);
+  pinMode(PM_PIN_P2, INPUT);
+  pinMode(PM_ENABLE, OUTPUT);
+  digitalWrite(PM_ENABLE, LOW);
+}
+
+
+/* Power up the particulate matter sensor.
+   This should be done at least 90 seconds before sampling is performed:
+   the heater element that draws the bulk of the power generates an air
+   current through the sensor that takes time to stabilize. */
+void startPM() {
+  digitalWrite(PM_ENABLE,HIGH);
+}
+
+
+/* Turn off power to the particulate matter sensor.
+   If the sensor is currently sampling, any not-yet-processed data
+   will be lost. */
+void stopPM() {
+  if (pmSampling) stopPMSampling();
+  digitalWrite(PM_ENABLE,LOW);
+}
+
+
+/* Indicates if the particulate matter sensor is currently taking data. */
+bool isPMSampling() {
+  return pmSampling;
+}
+
+
+/* Resets parameters used in particulate matter calculations. */
+void resetPMSampling() {
+  // Disable interrupts to prevent ISRs from changing values.
+  // Store previous interrupt state so we can restore it afterwards.
+  uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+  cli();  // Disable interrupts
+  
+  // Set pulse start times to now in case currently in pulse
+  // or pulse begins after this routine but before ISR can run.
+  unsigned long t0m = millis();
+  unsigned long t0u = micros();
+  pmSampleT0 = t0m;
+  pmPulse1T0 = t0u;
+  pmPulse2T0 = t0u;
+  pmPulse1TSum = 0;
+  pmPulse2TSum = 0;
+  pmPulse1State = digitalRead(PM_PIN_P1);
+  pmPulse2State = digitalRead(PM_PIN_P2);
+  
+  // Restore interrupt status
+  SREG = oldSREG;
+}
+
+
+/* Process a particulate matter sensor state change (start/end 
+   of pulse).  Intended to be run as an ISR on each of the two
+   sensor pulse pins. */
+void processPMPulseISR() {
+  if (!pmSampling) return;
+  unsigned long t0 = micros();
+  uint8_t state;
+  // Process pulse 1
+  state = digitalRead(PM_PIN_P1);
+  if (state != pmPulse1State) {
+    pmPulse1State = state;
+    // Start of pulse
+    if (state == LOW) {
+      pmPulse1T0 = t0;
+    // End of pulse
+    } else {
+      pmPulse1TSum += (t0 - pmPulse1T0);
+    }
+  }
+  // Process pulse 2
+  state = digitalRead(PM_PIN_P2);
+  if (state != pmPulse2State) {
+    pmPulse2State = state;
+    // Start of pulse
+    if (state == LOW) {
+      pmPulse2T0 = t0;
+    // End of pulse
+    } else {
+      pmPulse2TSum += (t0 - pmPulse2T0);
+    }
+  }
+}
+
+
+/* Perform particulate matter sensor calculations based upon data 
+   collected since last call to processPM() or startPM().  Longer
+   collection periods increase accuracy & precision; 10+ seconds
+   is strongly suggested, but 30+ seconds is preferrable. */
+void processPM() {
+  if (!pmSampling) {
+    Serial.println("Warning: No new particulate matter data to process.");
+    Serial.println("  Using old results.");
+    return;
+  }
+  // Disable interrupts to prevent ISRs from changing values.
+  // Store previous interrupt state so we can restore it afterwards.
+  uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+  cli();  // Disable interrupts
+  
+  unsigned long t0m = millis();
+  unsigned long t0u = micros();
+  
+  // Account for any incomplete pulses
+  if (pmPulse1State == LOW) {
+      pmPulse1TSum += (t0u - pmPulse1T0);
+  }
+  if (pmPulse2State == LOW) {
+      pmPulse2TSum += (t0u - pmPulse2T0);
+  }
+  
+  // Low pulse occupancy: fraction of time spent low.
+  // Must correct for different units (us vs ms).
+  float inverseSampleInterval = 1 / (1000.0 * (t0m - pmSampleT0));
+  float lpo1 = pmPulse1TSum * inverseSampleInterval;
+  float lpo2 = pmPulse2TSum * inverseSampleInterval;
+
+  // This polynomial approximation to the SM-PWM-01C data sheet's
+  // LPO vs. Dust Concentration curve is from Dan Tudose's library:
+  //   https://github.com/dantudose/SM-PWM-01A
+  // Here, lpo is fraction (not percentage).
+  //float density = 0.62 + lpo*(5.2e4 + lpo*(3.8e4 + lpo*(1.1e6)))
+
+  // This is a fit to the form lpo = 1 - exp(-a*density), a
+  // functional form that would be appropriate for occupancy,
+  // in certain limits.  Treating the minimum & maximum curves
+  // on the data sheet plot as the 1-sigma band (which is likely
+  // way overestimating the errors) and performing a weighted
+  // least-squares fit gives the following:
+  //   a   = 1.04e-4 +/- 1.0e-5
+  //   1/a = 9555 +/- 943
+  // The data sheet makes no distinction between the LPO's for
+  // the two different pulse types; it is unclear if or why
+  // the two should have an identical curve, but this is what
+  // everyone else seems to do.... (CAVEAT EMPTOR)
+  float density02 = -9555*log(1-min(0.99,lpo1));
+  float density10 = -9555*log(1-min(0.99,lpo2));
+
+  // Particle densities given as a moving average with an
+  // exponential weighting in time.
+  if (PM_SAMPLE_WEIGHTING_TIME > 0) {
+    float f = exp(-(t0m-pmLastSampleTime)/(float(PM_SAMPLE_WEIGHTING_TIME)));
+    pmDensity02 = f*pmDensity02 + (1-f)*density02;
+    pmDensity10 = f*pmDensity10 + (1-f)*density10;
+  } else {
+    pmDensity02 = density02;
+    pmDensity10 = density10;
+  }
+  
+  // Reset calculation parameters for next measurement interval
+  resetPMSampling();
+  pmLastSampleTime = millis();
+  
+  // Restore interrupt status
+  SREG = oldSREG;
+}
+
+
+/* Start particulate matter sensor sampling.  Ideally, particle 
+   meter should be powered for 90+ seconds prior to sampling. */
+void startPMSampling() {
+  // If already sampling, just reset sampling data
+  if (pmSampling) {
+    resetPMSampling();
+    return;
+  }
+  // Check if sensor is not powered up
+  if (digitalRead(PM_ENABLE) != HIGH) {
+    startPM();
+    Serial.println("Warning: Particulate matter sensor was not powered on prior to sampling.");
+    Serial.println("  Particle meter readings may be inaccurate.");
+    delay(10);
+  }
+  resetPMSampling();
+  attachInterrupt(digitalPinToInterrupt(PM_PIN_P1),processPMPulseISR,CHANGE);
+  attachInterrupt(digitalPinToInterrupt(PM_PIN_P2),processPMPulseISR,CHANGE);
+  pmSampling = true;
+}
+
+
+/* Stop particulate matter sensor sampling.
+   If currently sampling and sampling data has been unprocessed for
+   at least updateInterval milliseconds, it will be processed: an
+   updateInterval of -1 (the default) means data will not be processed. */
+void stopPMSampling(unsigned long updateInterval/*=-1*/) {
+  if (!pmSampling) return;
+  if ((millis() - pmLastSampleTime) > updateInterval) {
+    processPM();
+  }
+  pmSampling = false;
+  detachInterrupt(digitalPinToInterrupt(PM_PIN_P1));
+  detachInterrupt(digitalPinToInterrupt(PM_PIN_P2));
+}
+
+
+/* Returns the most recently measured/calculated PM_2.5 value in ug/m^3.
+   PM_2.5 is a measurement of particulate matter 2.5 um in diameter or
+   smaller.  The sensor does not discriminate between particle sizes
+   very well, so this is only an approximation of PM_2.5. */
+/*
+float getPM25() {
+  return pmDensity02;
+}
+*/
+
+
+/* Returns the most recently measured/calculated PM_10 value in ug/m^3.
+   PM_10 is a measurement of particulate matter 10 um in diameter or
+   smaller.  The sensor does not discriminate between particle sizes
+   very well, so this is only an approximation of PM_10. */
+/*
+float getPM10() {
+  return pmDensity10;
+}
+*/
+
+
 

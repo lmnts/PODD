@@ -50,4 +50,18 @@ void updatePM();
 float getPM2_5();
 float getPM10();
 
+// SM-PWM-01C Particulate Matter Sensor routines
+void initPM();
+void startPM();
+void stopPM();
+void startPMSampling();
+void stopPMSampling(unsigned long updateInterval = -1);
+bool isPMSampling();
+void resetPMSampling();
+void processPMPulseISR();
+void processPM();
+//float getPM25();
+//float getPM10();
+
+
 #endif
