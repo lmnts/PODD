@@ -82,10 +82,21 @@ volatile unsigned long pmPulse1T0 = 0;  // Pulse 1 start time [us]
 volatile unsigned long pmPulse2T0 = 0;  // Pulse 2 start time [us]
 volatile unsigned long pmPulse1TSum = 0;  // Pulse 1 cumulative time (low) [us]
 volatile unsigned long pmPulse2TSum = 0;  // Pulse 2 cumulative time (low) [us]
+volatile unsigned int pmPulse1N = 0;  // Pulse 1 count
+volatile unsigned int pmPulse2N = 0;  // Pulse 2 count
 volatile uint8_t pmPulse1State = HIGH;  // Current pulse 1 state
 volatile uint8_t pmPulse2State = HIGH;  // Current pulse 2 state
 float pmDensity02 = 0.0;  // Density of ~ 2 um dust (ug/m^3)
 float pmDensity10 = 0.0;  // Density of ~ 10 um dust (ug/m^3)
+
+// Extra PM parameters for sensor testing
+#define PM_TESTING
+#ifdef PM_TESTING
+volatile uint8_t pmPulseState = B11;  // Bit k: pulse k (1 is high)
+volatile unsigned int pmPulseCount[4];
+volatile unsigned long pmPulseT0[4];
+volatile unsigned long pmPulseTSum[4];
+#endif
 
 // CO
 //#define numCoRead 4
@@ -403,8 +414,29 @@ void resetPMSampling() {
   pmPulse2T0 = t0u;
   pmPulse1TSum = 0;
   pmPulse2TSum = 0;
-  pmPulse1State = digitalRead(PM_PIN_P1);
-  pmPulse2State = digitalRead(PM_PIN_P2);
+  pmPulse1N = 0;
+  pmPulse2N = 0;
+  // If not sampling (ISR not active), ignore any current pulse
+  // we are in as we may miss the end of pulse between now and
+  // when sampling begins.
+  if (pmSampling) {
+    pmPulse1State = digitalRead(PM_PIN_P1);
+    pmPulse2State = digitalRead(PM_PIN_P2);
+  } else {
+    pmPulse1State = HIGH;
+    pmPulse2State = HIGH;
+  }
+  
+  // Sensor testing >>>>>>>>>>>>>>>>>>>>
+  #ifdef PM_TESTING
+  pmPulseState = B11;
+  for (uint8_t k = 0; k < 4; k++) {
+    pmPulseCount[k] = 0;
+    pmPulseT0[k] = t0u;
+    pmPulseTSum[k] = 0;
+  }
+  #endif
+  //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
   
   // Restore interrupt status
   SREG = oldSREG;
@@ -416,7 +448,7 @@ void resetPMSampling() {
    sensor pulse pins. */
 void processPMPulseISR() {
   if (!pmSampling) return;
-  unsigned long t0 = micros();
+  unsigned long t0u = micros();
   uint8_t state;
   // Process pulse 1
   state = digitalRead(PM_PIN_P1);
@@ -424,10 +456,11 @@ void processPMPulseISR() {
     pmPulse1State = state;
     // Start of pulse
     if (state == LOW) {
-      pmPulse1T0 = t0;
+      pmPulse1T0 = t0u;
     // End of pulse
     } else {
-      pmPulse1TSum += (t0 - pmPulse1T0);
+      pmPulse1TSum += (t0u - pmPulse1T0);
+      pmPulse1N++;
     }
   }
   // Process pulse 2
@@ -436,12 +469,26 @@ void processPMPulseISR() {
     pmPulse2State = state;
     // Start of pulse
     if (state == LOW) {
-      pmPulse2T0 = t0;
+      pmPulse2T0 = t0u;
     // End of pulse
     } else {
-      pmPulse2TSum += (t0 - pmPulse2T0);
+      pmPulse2TSum += (t0u - pmPulse2T0);
+      pmPulse2N++;
     }
   }
+  
+  // Sensor testing >>>>>>>>>>>>>>>>>>>>
+  #ifdef PM_TESTING
+  uint8_t pulseState =   (digitalRead(PM_PIN_P1) == HIGH ? 1 : 0)
+                       + (digitalRead(PM_PIN_P2) == HIGH ? 2 : 0);
+  if (pulseState != pmPulseState) {
+    pmPulseTSum[pmPulseState] += (t0u - pmPulseT0[pmPulseState]);
+    pmPulseCount[pmPulseState]++;
+    pmPulseT0[pulseState] = t0u;
+    pmPulseState = pulseState;
+  }
+  #endif
+  //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 }
 
 
@@ -466,23 +513,61 @@ void processPM() {
   // Account for any incomplete pulses
   if (pmPulse1State == LOW) {
       pmPulse1TSum += (t0u - pmPulse1T0);
+      pmPulse1N++;  // Cannot add 0.5...
   }
   if (pmPulse2State == LOW) {
       pmPulse2TSum += (t0u - pmPulse2T0);
+      pmPulse2N++;  // Cannot add 0.5...
   }
+  
+  // Sensor testing >>>>>>>>>>>>>>>>>>>>
+  #ifdef PM_TESTING
+  uint8_t pulseState =   (digitalRead(PM_PIN_P1) == HIGH ? 1 : 0)
+                       + (digitalRead(PM_PIN_P2) == HIGH ? 2 : 0);
+  pmPulseTSum[pmPulseState] += (t0u - pmPulseT0[pmPulseState]);
+  pmPulseCount[pmPulseState]++;
+  pmPulseT0[pulseState] = t0u;
+  pmPulseState = pulseState;
+  #endif
+  //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+  
+  // Copy relevant shared variables to local variables so we can
+  // quickly re-enable interrupts.
+  unsigned long _pmSampleT0 = pmSampleT0;
+  unsigned long _pmPulse1TSum = pmPulse1TSum;
+  unsigned long _pmPulse2TSum = pmPulse2TSum;
+  unsigned int _pmPulse1N = pmPulse1N;
+  unsigned int _pmPulse2N = pmPulse2N;
+  // Sensor testing >>>>>>>>>>>>>>>>>>>>
+  #ifdef PM_TESTING
+  unsigned int _pmPulseCount[4];
+  unsigned long _pmPulseTSum[4];
+  for (uint8_t k = 0; k < 4; k++) {
+    _pmPulseCount[k] = pmPulseCount[k];
+    _pmPulseTSum[k]  = pmPulseTSum[k];
+  }
+  #endif
+  //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+  
+  // Restore interrupt status.
+  // Re-enables interrupts if they were previously active.
+  SREG = oldSREG;
+  
+  // Length of sampling interval [ms]
+  unsigned long sampleInterval = t0m - _pmSampleT0;
   
   // Low pulse occupancy: fraction of time spent low.
   // Must correct for different units (us vs ms).
-  float inverseSampleInterval = 1 / (1000.0 * (t0m - pmSampleT0));
-  float lpo1 = pmPulse1TSum * inverseSampleInterval;
-  float lpo2 = pmPulse2TSum * inverseSampleInterval;
-
+  float inverseSampleInterval = 1 / (1000.0 * sampleInterval);
+  float lpo1 = _pmPulse1TSum * inverseSampleInterval;
+  float lpo2 = _pmPulse2TSum * inverseSampleInterval;
+  
   // This polynomial approximation to the SM-PWM-01C data sheet's
   // LPO vs. Dust Concentration curve is from Dan Tudose's library:
   //   https://github.com/dantudose/SM-PWM-01A
   // Here, lpo is fraction (not percentage).
   //float density = 0.62 + lpo*(5.2e4 + lpo*(3.8e4 + lpo*(1.1e6)))
-
+  
   // This is a fit to the form lpo = 1 - exp(-a*density), a
   // functional form that would be appropriate for occupancy,
   // in certain limits.  Treating the minimum & maximum curves
@@ -513,8 +598,36 @@ void processPM() {
   resetPMSampling();
   pmLastSampleTime = millis();
   
-  // Restore interrupt status
-  SREG = oldSREG;
+  // Sensor testing >>>>>>>>>>>>>>>>>>>>
+  #ifdef PM_TESTING
+  char sbuffer[64];
+  Serial.println("Particulate Matter Sensor (SM-PWM-01C):");
+  sprintf(sbuffer,"%8.2f",(double)pmDensity02);
+  Serial.print("  PM2  [ug/m^3]: ");
+  Serial.println(sbuffer);
+  sprintf(sbuffer,"%8.6f",(double)pmDensity10);
+  Serial.print("  PM10 [ug/m^3]: ");
+  Serial.println(sbuffer);
+  Serial.print("  Pulse 1 LPO, count, frequency[Hz]: ");
+  sprintf(sbuffer,"%8.6f %6d %8.3f",
+          (double)lpo1,_pmPulse1N,_pmPulse1N/(0.001*sampleInterval));
+  Serial.println(sbuffer);
+  Serial.print("  Pulse 2 LPO, count, frequency[Hz]: ");
+  sprintf(sbuffer,"%8.6f %6d %8.3f",
+          (double)lpo2,_pmPulse2N,_pmPulse2N/(0.001*sampleInterval));
+  Serial.println(sbuffer);
+  Serial.println("  Pulse 1 state, pulse 2 state, LPO, count, frequency[Hz]: ");
+  for (uint8_t k = 3; k >= 0; k--) {
+    float lpo  = _pmPulseTSum[k] * inverseSampleInterval;
+    float freq = _pmPulseCount[k]/(0.001*sampleInterval);
+    sprintf(sbuffer,"    %7s %7s %8.6f %6d %8.3f",
+            k & 1 ? "inactive" : " active ",
+            k & 2 ? "inactive" : " active ",
+            (double)lpo,_pmPulseCount[k],(double)freq);
+    Serial.println(sbuffer);
+  }
+  #endif
+  //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 }
 
 
@@ -555,12 +668,14 @@ void stopPMSampling(unsigned long updateInterval/*=-1*/) {
 }
 
 
-/* Returns the most recently measured/calculated PM_2.5 value in ug/m^3.
-   PM_2.5 is a measurement of particulate matter 2.5 um in diameter or
+/* Returns the most recently measured/calculated PM_2 value in ug/m^3.
+   PM_2 is a measurement of particulate matter 2 um in diameter or
    smaller.  The sensor does not discriminate between particle sizes
-   very well, so this is only an approximation of PM_2.5. */
+   very well, so this is only an approximation of PM_2.  Could treat
+   this as PM_2.5, given the limitations in particle size
+   discrimination. */
 /*
-float getPM25() {
+float getPM2() {
   return pmDensity02;
 }
 */
