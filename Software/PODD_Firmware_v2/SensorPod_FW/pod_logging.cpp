@@ -11,6 +11,7 @@
  * when various sensors are sampled.
  */
 
+#include "pod_util.h"
 #include "pod_logging.h"
 #include "pod_config.h"
 #include "pod_network.h"
@@ -99,7 +100,7 @@ void setupSDLogging() {
 
   Serial.print(F("Logging to: "));
   Serial.println(filename);
-  String header = "Date, Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"; // FILE HEADER
+  String header = F("Date, Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
   dataFile.println(header);
 }
 
