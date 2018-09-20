@@ -11,6 +11,7 @@
  * when various sensors are sampled.
  */
 
+#include "pod_util.h"
 #include "pod_logging.h"
 #include "pod_config.h"
 #include "pod_network.h"
@@ -99,8 +100,17 @@ void setupSDLogging() {
 
   Serial.print(F("Logging to: "));
   Serial.println(filename);
+  Serial.print(F("Free memory: "));
+  Serial.println(freeRAM());
+  Serial.flush();
   String header = "Date, Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"; // FILE HEADER
+  Serial.print(F("Free memory: "));
+  Serial.println(freeRAM());
+  Serial.flush();
   dataFile.println(header);
+  Serial.print(F("Free memory: "));
+  Serial.println(freeRAM());
+  Serial.flush();
 }
 
 void logDataSD(String sensorData) {
