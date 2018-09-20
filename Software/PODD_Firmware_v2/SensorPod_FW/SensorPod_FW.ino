@@ -46,59 +46,90 @@
 //--------------------------------------------------------------------------------------------- [setup]
 
 void setup() {
+  // Alternative to F() macro wrapping so we can reuse this string
+  const char LINE[] PROGMEM = "------------------------------------------------------------------------";
+  
+  // Time delay gives chance to connect a terminal after reset
   delay(5000);
   Serial.begin(9600);
-  Serial.println(F("starting setup"));
+
+  // Compilation info
+  Serial.println(F("PODD firmware starting...."));
+  Serial.println(F("  Compilation file: "  __FILE__));
+  Serial.println(F("  Compilation date: "  __DATE__ " " __TIME__));
+  Serial.println(F("  Compiler version: " __VERSION__));
+  Serial.print(  F("  Arduino version:  "));
+  Serial.println(ARDUINO,DEC);
+  Serial.println();
+  delay(1000);
+
+  Serial.println(LINE);
+  Serial.println(F("Starting setup...."));
   delay(2000);
 
+  Serial.println(F("Setting up XBee...."));
   initXBee();
-  Wire.begin(); // for humidity sensor
-
+  
+  Serial.println(F("Setting up I2C...."));
+  Wire.begin();
+  
+  Serial.println(F("Setting up RTC...."));
   setupRTC();
+
+  // Ensure LED is off
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  Serial.println(F("setting up sensors"));
-
+  Serial.println(F("Setting up sensors...."));
   sensorSetup();
   if (verifySensors()) {
 	  digitalWrite(LED_PIN, HIGH);
   }
 
-  Serial.println(F("setting up SD and ethernet"));
-
+  Serial.println(F("Setting up SD...."));
   setupPodSD();
 
+  Serial.println(F("Setting up ethernet...."));
   ethernetSetup();
-
+  
+  Serial.println();
+  Serial.println(LINE);
+  Serial.println();
+  
   loadPodConfig();
   podIntro();
 
-  Serial.println(F("XBee configured"));
-
+  Serial.println(F("Starting SD logging...."));
   setupSDLogging();
-
-  Serial.println(F("SD logging set up"));
-
+  
+  Serial.println(F("Starting sensor timers...."));
   setupSensorTimers();
 
   // power optimizations
   if (getRatePM() <= 0) {
+    Serial.println(F("Powering down particulate matter sensor...."));
     digitalWrite(PM_ENABLE, LOW);
   }
   if(! getModeCoord()){
     if(getRatePM() > 120) {
+      Serial.println(F("Powering down particulate matter sensor until next reading...."));
       digitalWrite(PM_ENABLE, LOW);
     }
 
     //Disable Ethernet for Drones
+    Serial.println(F("Powering down ethernet...."));
     digitalWrite(ETHERNET_EN, LOW);
 
-    #define DEBUG
-    #if defined(DEBUG)
+    #define SERIAL_DEBUG
+    #if defined(SERIAL_DEBUG)
       Serial.println(F("DEBUG: Drone serial output will not be disabled."));
     #else
-      Serial.println(F("powering down USB"));
+      Serial.println(F("Powering down USB...."));
+      Serial.println(F("Serial output will now end."));
+      Serial.println();
+      Serial.println(LINE);
+      Serial.println();
+      Serial.flush();
       Serial.end();
       USBCON |= (1<<FRZCLK); // Disable USB to save power.
     #endif
@@ -115,8 +146,15 @@ void setup() {
   // Begin background process to pull data from the XBee for later
   // processing.  Currently only necessary for the coordinator.
   if(getModeCoord()){
+    Serial.println(F("Starting coordinator XBee monitoring process...."));
     startXBee();
   }
+  
+  Serial.println();
+  Serial.println(F("Initialization and setup complete.  The PODD will now begin taking data."));
+  Serial.println();
+  Serial.println(LINE);
+  Serial.println();
   
   #ifdef DEBUG
   //writeDebugLog(F("Fxn: setup()"));
