@@ -74,7 +74,7 @@ void setup() {
   delay(1000);
 
   #ifdef PM_TESTING
-  testPMSensor(-1,30000,30000);
+  testPMSensor(-1,30000,60000);
   #endif
 
   Serial.println(LINE);

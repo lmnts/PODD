@@ -72,7 +72,7 @@ int endOfSampling = 0;
 #define PM_PIN_P2 PIN_C5
 // Time scale (ms) over which to generate a moving average of
 // the sensor readings.  Set to 0 to use current values only.
-#define PM_SAMPLE_WEIGHTING_TIME 0
+#define PM_SAMPLE_WEIGHTING_TIME (30*60*1000ul)
 // Various calculation quantities.
 // Volatile necessary when used in both interrupts and main thread.
 // UNITS: Sample times in milliseconds, pulse times in microseconds.
@@ -598,11 +598,11 @@ void processPM() {
   // should be non-negative already.
   float density02 = abs(-9555*log(1-min(0.99,lpo1)));
   float density10 = abs(-9555*log(1-min(0.99,lpo2)));
-
+  
   // Particle densities given as a moving average with an
   // exponential weighting in time.
-  if (PM_SAMPLE_WEIGHTING_TIME > 0) {
-    float f = exp(-(t0m-pmLastSampleTime)/(float(PM_SAMPLE_WEIGHTING_TIME)));
+  if ((PM_SAMPLE_WEIGHTING_TIME > 0)) {
+    float f = exp(-float(t0m-pmLastSampleTime)/(float(PM_SAMPLE_WEIGHTING_TIME)));
     pmDensity02 = f*pmDensity02 + (1-f)*density02;
     pmDensity10 = f*pmDensity10 + (1-f)*density10;
   } else {
@@ -618,62 +618,62 @@ void processPM() {
   #ifdef PM_TESTING
   // Arduino implementation of printf drops %f support to reduce
   // memory usage.  We use dsostrf instead.
-  char sbuffer[64];
+  char sbuffer[128];
   char fbuffer1[16],fbuffer2[16];
   Serial.println(F("Particulate Matter Sensor (SM-PWM-01C):"));
-  //sprintf(sbuffer,"%8.3f",(double)pmDensity02);
-  dtostrf(pmDensity02,8,3,sbuffer);
-  Serial.print(F("  PM2  [ug/m^3]: "));
-  Serial.println(sbuffer);
-  //sprintf(sbuffer,"%8.3f",(double)pmDensity10);
-  dtostrf(pmDensity10,8,3,sbuffer);
-  Serial.print(F("  PM10 [ug/m^3]: "));
-  Serial.println(sbuffer);
-  
-  Serial.print(F("  Pulse 1 LPO, count, frequency[Hz]:  "));
-  //sprintf(sbuffer,"%8.6f %6d %8.3f",
-  //        (double)lpo1,_pmPulse1N,_pmPulse1N/(0.001*sampleInterval));
+  if (PM_SAMPLE_WEIGHTING_TIME > 0) {
+    dtostrf(pmDensity02,8,3,fbuffer1);
+    dtostrf(density02,  7,3,fbuffer2);
+    sprintf(sbuffer,"  PM2  [ug/m^3]: %s  [%s]",fbuffer1,fbuffer2);
+    Serial.println(sbuffer);
+    dtostrf(pmDensity10,8,3,fbuffer1);
+    dtostrf(density10,  7,3,fbuffer2);
+    sprintf(sbuffer,"  PM10 [ug/m^3]: %s  [%s]",fbuffer1,fbuffer2);
+    Serial.println(sbuffer);
+  } else {
+    dtostrf(pmDensity02,8,3,fbuffer1);
+    sprintf(sbuffer,"  PM2  [ug/m^3]: %s",fbuffer1);
+    Serial.println(sbuffer);
+    dtostrf(pmDensity10,8,3,fbuffer1);
+    sprintf(sbuffer,"  PM10 [ug/m^3]: %s",fbuffer1);
+    Serial.println(sbuffer);
+  }
+
+  unsigned long pulseTAve;
   dtostrf(lpo1,8,6,fbuffer1);
   dtostrf(_pmPulse1N/(0.001*sampleInterval),8,3,fbuffer2);
-  sprintf(sbuffer,"%s %6d %s",fbuffer1,_pmPulse1N,fbuffer2);
+  pulseTAve = _pmPulse1N > 0 ? _pmPulse1TSum / _pmPulse1N : 0;
+  sprintf(sbuffer,"  Pulse 1 LPO, count, Tave[us], freq[Hz]:  %s %6d %8ld %s",
+          fbuffer1,_pmPulse1N,pulseTAve,fbuffer2);
   Serial.println(sbuffer);
-  Serial.print(F("  Pulse 2 LPO, count, frequency[Hz]:  "));
-  //sprintf(sbuffer,"%8.6f %6d %8.3f",
-  //        (double)lpo2,_pmPulse2N,_pmPulse2N/(0.001*sampleInterval));
   dtostrf(lpo2,8,6,fbuffer1);
   dtostrf(_pmPulse2N/(0.001*sampleInterval),8,3,fbuffer2);
-  sprintf(sbuffer,"%s %6d %s",fbuffer1,_pmPulse1N,fbuffer2);
+  pulseTAve = _pmPulse2N > 0 ? _pmPulse2TSum / _pmPulse2N : 0;
+  sprintf(sbuffer,"  Pulse 2 LPO, count, Tave[us], freq[Hz]:  %s %6d %8ld %s",
+          fbuffer1,_pmPulse2N,pulseTAve,fbuffer2);
   Serial.println(sbuffer);
   
-  //Serial.println(F("  Pulse 1 state, pulse 2 state, LPO, count, frequency[Hz]: "));
-  sprintf(sbuffer,"    %8s  %8s  %8s %6s  %8s",
-          "Pulse 1","Pulse 2","  LPO   "," count","freq[Hz]");
+  sprintf(sbuffer,"    %8s  %8s  %8s %6s  %8s  %8s  %8s",
+          "Pulse 1","Pulse 2","  LPO   "," count","Ttot[us]","Tave[us]","freq[Hz]");
   Serial.println(sbuffer);
   for (int8_t k = 3; k >= 0; k--) {
     float lpo  = _pmPulseTSum[k] * inverseSampleInterval;
     float freq = _pmPulseCount[k]/(0.001*sampleInterval);
-    //sprintf(sbuffer,"    %8s  %8s  %8.6f %6d  %8.3f",
-    //        k & 1 ? "inactive" : " active ",
-    //        k & 2 ? "inactive" : " active ",
-    //        (double)lpo,_pmPulseCount[k],(double)freq);
     dtostrf(lpo,8,6,fbuffer1);
     dtostrf(freq,8,3,fbuffer2);
-    sprintf(sbuffer,"    %8s  %8s  %8s %6d  %8s",
+    pulseTAve = _pmPulseCount[k] > 0 ? _pmPulseTSum[k] / _pmPulseCount[k] : 0;
+    sprintf(sbuffer,"    %8s  %8s  %8s %6d  %8ld  %8ld  %8s",
             k & 1 ? "inactive" : " active ",
             k & 2 ? "inactive" : " active ",
-            fbuffer1,_pmPulseCount[k],fbuffer2);
+            fbuffer1,_pmPulseCount[k],_pmPulseTSum[k],pulseTAve,fbuffer2);
     Serial.println(sbuffer);
   }
   
-  Serial.print(F("  Times [us]: "));
   unsigned long timeTotal = 0;
   for (int8_t k = 3; k >= 0; k--) {
     timeTotal += _pmPulseTSum[k];
-    sprintf(sbuffer," %7ld",_pmPulseTSum[k]);
-    Serial.print(sbuffer);
   }
-  Serial.println();
-  sprintf(sbuffer,"               -> %8ld  (%ld)",timeTotal,sampleInterval*1000);
+  sprintf(sbuffer,"  Total time [us]:  %8ld  (%ld)",timeTotal,sampleInterval*1000);
   Serial.println(sbuffer);
   #endif
   //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
