@@ -91,6 +91,7 @@ volatile uint8_t pmPulse1State = HIGH;  // Current pulse 1 state
 volatile uint8_t pmPulse2State = HIGH;  // Current pulse 2 state
 float pmDensity02 = 0.0;  // Density of ~ 2 um dust (ug/m^3)
 float pmDensity10 = 0.0;  // Density of ~ 10 um dust (ug/m^3)
+float pmWeight = 0.0;  // Weighting used for moving average
 
 // Extra PM parameters for sensor testing
 #ifdef PM_TESTING
@@ -544,6 +545,10 @@ void processPM() {
   unsigned long _pmPulse2TSum = pmPulse2TSum;
   unsigned int _pmPulse1N = pmPulse1N;
   unsigned int _pmPulse2N = pmPulse2N;
+  // Use below to avoid "unused variable" compiler warnings
+  // (doesn't actually do anything).
+  (void)_pmPulse1N;
+  (void)_pmPulse2N;
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
   #ifdef PM_TESTING
   unsigned int _pmPulseCount[4];
@@ -603,8 +608,18 @@ void processPM() {
   // exponential weighting in time.
   if ((PM_SAMPLE_WEIGHTING_TIME > 0)) {
     float f = exp(-float(t0m-pmLastSampleTime)/(float(PM_SAMPLE_WEIGHTING_TIME)));
-    pmDensity02 = f*pmDensity02 + (1-f)*density02;
-    pmDensity10 = f*pmDensity10 + (1-f)*density10;
+    // Biased toward first measurement early on.
+    //pmDensity02 = f*pmDensity02 + (1-f)*density02;
+    //pmDensity10 = f*pmDensity10 + (1-f)*density10;
+    // Use of weights here allows for more equitable use of
+    // all early measurements to establish moving average.
+    // More weight to measurements with longer sampling periods.
+    // In the long run, gives same result as simpler above form.
+    float w0   = pmWeight;
+    float wtot = f*w0 + sampleInterval;  // Weight by sample time, fade old weights
+    pmDensity02 = (f*w0*pmDensity02 + sampleInterval*density02) / wtot;
+    pmDensity10 = (f*w0*pmDensity10 + sampleInterval*density10) / wtot;
+    pmWeight = wtot;
   } else {
     pmDensity02 = density02;
     pmDensity10 = density10;
