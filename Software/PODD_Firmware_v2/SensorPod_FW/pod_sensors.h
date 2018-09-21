@@ -18,8 +18,8 @@
 #define MAX_RX_TEMP 125 // Operating range, degress C
 #define MIN_RH_HUM 0
 #define MAX_RX_HUM 100
-#define MIN_LIGHT 10 // Experimental
-#define MAX_LIGHT 3300 // Experimental
+#define MIN_LIGHT 0     // Sensor range, lux
+#define MAX_LIGHT 80000 // Sensor range, lux
 #define MIN_GLOBE_TEMP -67 // Operating range, degrees F
 #define MAX_GLOBE_TEMP 176 // Operating range, degrees F
 #define MIN_SOUND 200
@@ -32,6 +32,11 @@
 #define MAX_PM2_5 10000
 #define MIN_PM10 -1
 #define MAX_PM10 10000
+
+// Define this to enable particulate matter sensor testing
+// output and routines.
+//#define PM_TESTING
+
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
 
@@ -47,8 +52,8 @@ double getSound();
 int getCO2();
 float getCO();
 void updatePM();
-float getPM2_5();
-float getPM10();
+float getPM2_5_OLD();
+float getPM10_OLD();
 
 // SM-PWM-01C Particulate Matter Sensor routines
 void initPM();
@@ -60,8 +65,13 @@ bool isPMSampling();
 void resetPMSampling();
 void processPMPulseISR();
 void processPM();
-//float getPM25();
-//float getPM10();
-
+float getPM2();
+float getPM10();
+// Below only used for testing
+#ifdef PM_TESTING
+void printPMPauseProgress(unsigned int N, unsigned long pause = 1000);
+void testPMSensor(unsigned int cycles, unsigned long sampleTime = 30000,
+                  unsigned long warmupTime = 90000);
+#endif
 
 #endif
