@@ -52,16 +52,30 @@ void setup() {
   // Time delay gives chance to connect a terminal after reset
   delay(5000);
   Serial.begin(9600);
-
+  
   // Compilation info
   Serial.println(F("PODD firmware starting...."));
-  Serial.println(F("  Compilation file: "  __FILE__));
+  // Get rid of any leading directories in file name
+  //Serial.println(F("  Compilation file: "  __FILE__));
+  if (strrchr(__FILE__,'\\') != NULL) {
+    Serial.print(F("  Compilation file: "));
+    Serial.println(strrchr(__FILE__,'\\')+1);
+  } else if (strrchr(__FILE__,'/') != NULL) {
+    Serial.print(F("  Compilation file: "));
+    Serial.println(strrchr(__FILE__,'/')+1);
+  } else {
+    Serial.println(F("  Compilation file: "  __FILE__));
+  }
   Serial.println(F("  Compilation date: "  __DATE__ " " __TIME__));
   Serial.println(F("  Compiler version: " __VERSION__));
   Serial.print(  F("  Arduino version:  "));
   Serial.println(ARDUINO,DEC);
   Serial.println();
   delay(1000);
+
+  #ifdef PM_TESTING
+  testPMSensor(-1,30000,30000);
+  #endif
 
   Serial.println(LINE);
   Serial.println(F("Starting setup...."));

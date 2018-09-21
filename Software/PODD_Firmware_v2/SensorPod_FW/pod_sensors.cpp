@@ -17,6 +17,8 @@
 #include "cozir.h"
 #include <Wire.h>
 #include <HIH61xx.h>
+#include <TimerOne.h>
+
 
 // SOUND
 unsigned int knock;
@@ -63,8 +65,9 @@ int endOfSampling = 0;
 
 // Particulate Matter (PM) Sensor: SM-PWM-01C
 // Pins for ~ 2 um and ~ 10 um dust particle pulses.
-// These may be switched from schematics due to ambiguity in sensor
-// documentation (reversing header flips only these two pins).
+// NOTE: The PCB schematics have the pin labels reversed;
+// pins defined here refer to the sensor P1 & P2 pins, not
+// the PCB labels.
 #define PM_PIN_P1 PIN_C6
 #define PM_PIN_P2 PIN_C5
 // Time scale (ms) over which to generate a moving average of
@@ -90,7 +93,6 @@ float pmDensity02 = 0.0;  // Density of ~ 2 um dust (ug/m^3)
 float pmDensity10 = 0.0;  // Density of ~ 10 um dust (ug/m^3)
 
 // Extra PM parameters for sensor testing
-#define PM_TESTING
 #ifdef PM_TESTING
 volatile uint8_t pmPulseState = B11;  // Bit k: pulse k (1 is high)
 volatile unsigned int pmPulseCount[4];
@@ -201,17 +203,16 @@ bool verifySensors() {
   }
 
   updatePM();
-  tval_f = getPM2_5();
+  tval_f = getPM2_5_OLD();
   if (tval_f < MIN_PM2_5 || tval_f > MAX_PM2_5) {
     Serial.println(F("PM 2.5 Failure: ") + String(tval_f));
     return false;
   }
-  tval_f = getPM10();
+  tval_f = getPM10_OLD();
   if (tval_f < MIN_PM10 || tval_f > MAX_PM10) {
     Serial.println(F("PM 10 Failure: ") + String(tval_f));
     return false;
   }
-
   
   return true;
 }
@@ -315,6 +316,9 @@ float getCO() {
   return analogRead(CoSpecSensor); // TODO: Conversion!
 }
 
+
+// Particular Matter Sensor (OLD) --------------------------------------
+
 void updatePM() {
   lowpulseoccupancy1 = 0;
   lowpulseoccupancy2 = 0;
@@ -356,21 +360,23 @@ void updatePM() {
   Serial.println(concentration10, 3);
 }
 
-float getPM2_5() {
+float getPM2_5_OLD() {
   return concentration2_5;
 }
 
-float getPM10() {
+float getPM10_OLD() {
   return concentration10;
 }
 
 
+// Particular Matter Sensor --------------------------------------------
+
 /* Initializes the particulate matter sensor, but does not power it up. */
 void initPM() {
-  pinMode(PM_PIN_P1, INPUT);
-  pinMode(PM_PIN_P2, INPUT);
-  pinMode(PM_ENABLE, OUTPUT);
-  digitalWrite(PM_ENABLE, LOW);
+  pinMode(PM_PIN_P1,INPUT);
+  pinMode(PM_PIN_P2,INPUT);
+  pinMode(PM_ENABLE,OUTPUT);
+  digitalWrite(PM_ENABLE,LOW);
 }
 
 
@@ -559,6 +565,14 @@ void processPM() {
   // Low pulse occupancy: fraction of time spent low.
   // Must correct for different units (us vs ms).
   float inverseSampleInterval = 1 / (1000.0 * sampleInterval);
+  // Sensor testing >>>>>>>>>>>>>>>>>>>>
+  #ifdef PM_TESTING
+  // Higher resolution sample interval
+  unsigned long pmPulseTSumTotal = 0;
+  for (uint8_t k = 0; k < 4; k++) pmPulseTSumTotal += pmPulseTSum[k];
+  inverseSampleInterval = 1.0 / pmPulseTSumTotal;
+  #endif
+  //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
   float lpo1 = _pmPulse1TSum * inverseSampleInterval;
   float lpo2 = _pmPulse2TSum * inverseSampleInterval;
   
@@ -580,8 +594,10 @@ void processPM() {
   // the two different pulse types; it is unclear if or why
   // the two should have an identical curve, but this is what
   // everyone else seems to do.... (CAVEAT EMPTOR)
-  float density02 = -9555*log(1-min(0.99,lpo1));
-  float density10 = -9555*log(1-min(0.99,lpo2));
+  // Note: abs() here used only to avoid -0.0 values; the results
+  // should be non-negative already.
+  float density02 = abs(-9555*log(1-min(0.99,lpo1)));
+  float density10 = abs(-9555*log(1-min(0.99,lpo2)));
 
   // Particle densities given as a moving average with an
   // exponential weighting in time.
@@ -600,32 +616,65 @@ void processPM() {
   
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
   #ifdef PM_TESTING
+  // Arduino implementation of printf drops %f support to reduce
+  // memory usage.  We use dsostrf instead.
   char sbuffer[64];
-  Serial.println("Particulate Matter Sensor (SM-PWM-01C):");
-  sprintf(sbuffer,"%8.2f",(double)pmDensity02);
-  Serial.print("  PM2  [ug/m^3]: ");
+  char fbuffer1[16],fbuffer2[16];
+  Serial.println(F("Particulate Matter Sensor (SM-PWM-01C):"));
+  //sprintf(sbuffer,"%8.3f",(double)pmDensity02);
+  dtostrf(pmDensity02,8,3,sbuffer);
+  Serial.print(F("  PM2  [ug/m^3]: "));
   Serial.println(sbuffer);
-  sprintf(sbuffer,"%8.6f",(double)pmDensity10);
-  Serial.print("  PM10 [ug/m^3]: ");
+  //sprintf(sbuffer,"%8.3f",(double)pmDensity10);
+  dtostrf(pmDensity10,8,3,sbuffer);
+  Serial.print(F("  PM10 [ug/m^3]: "));
   Serial.println(sbuffer);
-  Serial.print("  Pulse 1 LPO, count, frequency[Hz]: ");
-  sprintf(sbuffer,"%8.6f %6d %8.3f",
-          (double)lpo1,_pmPulse1N,_pmPulse1N/(0.001*sampleInterval));
+  
+  Serial.print(F("  Pulse 1 LPO, count, frequency[Hz]:  "));
+  //sprintf(sbuffer,"%8.6f %6d %8.3f",
+  //        (double)lpo1,_pmPulse1N,_pmPulse1N/(0.001*sampleInterval));
+  dtostrf(lpo1,8,6,fbuffer1);
+  dtostrf(_pmPulse1N/(0.001*sampleInterval),8,3,fbuffer2);
+  sprintf(sbuffer,"%s %6d %s",fbuffer1,_pmPulse1N,fbuffer2);
   Serial.println(sbuffer);
-  Serial.print("  Pulse 2 LPO, count, frequency[Hz]: ");
-  sprintf(sbuffer,"%8.6f %6d %8.3f",
-          (double)lpo2,_pmPulse2N,_pmPulse2N/(0.001*sampleInterval));
+  Serial.print(F("  Pulse 2 LPO, count, frequency[Hz]:  "));
+  //sprintf(sbuffer,"%8.6f %6d %8.3f",
+  //        (double)lpo2,_pmPulse2N,_pmPulse2N/(0.001*sampleInterval));
+  dtostrf(lpo2,8,6,fbuffer1);
+  dtostrf(_pmPulse2N/(0.001*sampleInterval),8,3,fbuffer2);
+  sprintf(sbuffer,"%s %6d %s",fbuffer1,_pmPulse1N,fbuffer2);
   Serial.println(sbuffer);
-  Serial.println("  Pulse 1 state, pulse 2 state, LPO, count, frequency[Hz]: ");
-  for (uint8_t k = 3; k >= 0; k--) {
+  
+  //Serial.println(F("  Pulse 1 state, pulse 2 state, LPO, count, frequency[Hz]: "));
+  sprintf(sbuffer,"    %8s  %8s  %8s %6s  %8s",
+          "Pulse 1","Pulse 2","  LPO   "," count","freq[Hz]");
+  Serial.println(sbuffer);
+  for (int8_t k = 3; k >= 0; k--) {
     float lpo  = _pmPulseTSum[k] * inverseSampleInterval;
     float freq = _pmPulseCount[k]/(0.001*sampleInterval);
-    sprintf(sbuffer,"    %7s %7s %8.6f %6d %8.3f",
+    //sprintf(sbuffer,"    %8s  %8s  %8.6f %6d  %8.3f",
+    //        k & 1 ? "inactive" : " active ",
+    //        k & 2 ? "inactive" : " active ",
+    //        (double)lpo,_pmPulseCount[k],(double)freq);
+    dtostrf(lpo,8,6,fbuffer1);
+    dtostrf(freq,8,3,fbuffer2);
+    sprintf(sbuffer,"    %8s  %8s  %8s %6d  %8s",
             k & 1 ? "inactive" : " active ",
             k & 2 ? "inactive" : " active ",
-            (double)lpo,_pmPulseCount[k],(double)freq);
+            fbuffer1,_pmPulseCount[k],fbuffer2);
     Serial.println(sbuffer);
   }
+  
+  Serial.print(F("  Times [us]: "));
+  unsigned long timeTotal = 0;
+  for (int8_t k = 3; k >= 0; k--) {
+    timeTotal += _pmPulseTSum[k];
+    sprintf(sbuffer," %7ld",_pmPulseTSum[k]);
+    Serial.print(sbuffer);
+  }
+  Serial.println();
+  sprintf(sbuffer,"               -> %8ld  (%ld)",timeTotal,sampleInterval*1000);
+  Serial.println(sbuffer);
   #endif
   //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 }
@@ -647,8 +696,23 @@ void startPMSampling() {
     delay(10);
   }
   resetPMSampling();
+  
+  #ifdef __AVR__
+  // Cannot use pin-change interrupts on most Teensy++ 2.0 pins
+  // and the ones that can be used for interrupts are already
+  // in use.  As a workaround, use timer-based, interrupt-driven
+  // function calls to explicitly check pin statuses at regular
+  // intervals.
+  // NOTE: This clashes with the coordinator XBee monitoring
+  // routine -- the last one to initialize takes control of the
+  // timer and the other will not run!
+  Timer1.initialize(1000);
+  Timer1.attachInterrupt(processPMPulseISR);
+  #else
   attachInterrupt(digitalPinToInterrupt(PM_PIN_P1),processPMPulseISR,CHANGE);
   attachInterrupt(digitalPinToInterrupt(PM_PIN_P2),processPMPulseISR,CHANGE);
+  #endif
+  
   pmSampling = true;
 }
 
@@ -663,8 +727,16 @@ void stopPMSampling(unsigned long updateInterval/*=-1*/) {
     processPM();
   }
   pmSampling = false;
+  
+  #ifdef __AVR__
+  // Workaround for lack of pin-change interrupts for Teensy++
+  // 2.0 pins.
+  Timer1.stop();
+  Timer1.detachInterrupt();
+  #else
   detachInterrupt(digitalPinToInterrupt(PM_PIN_P1));
   detachInterrupt(digitalPinToInterrupt(PM_PIN_P2));
+  #endif
 }
 
 
@@ -674,22 +746,96 @@ void stopPMSampling(unsigned long updateInterval/*=-1*/) {
    very well, so this is only an approximation of PM_2.  Could treat
    this as PM_2.5, given the limitations in particle size
    discrimination. */
-/*
 float getPM2() {
   return pmDensity02;
 }
-*/
 
 
 /* Returns the most recently measured/calculated PM_10 value in ug/m^3.
    PM_10 is a measurement of particulate matter 10 um in diameter or
    smaller.  The sensor does not discriminate between particle sizes
    very well, so this is only an approximation of PM_10. */
-/*
 float getPM10() {
   return pmDensity10;
 }
-*/
+
+
+/* Utility function to write dots to serial output over N consecutive
+   pause intervals [ms]. */
+// Sensor testing >>>>>>>>>>>>>>>>>>>>>>
+#ifdef PM_TESTING
+void printPMPauseProgress(unsigned int N, unsigned long pause) {
+  for (unsigned int k = 0; k < N; k++) {
+    delay(pause);
+    Serial.print('.');
+    Serial.flush();
+  }
+}
+#endif
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+/* Particulate matter sensor (SM-PWM-01C) testing routine.
+   Will sample the sensor for the given number of cycles after an
+   initial warmup period.  Sample and warmup periods in
+   milliseconds. */
+// Sensor testing >>>>>>>>>>>>>>>>>>>>>>
+#ifdef PM_TESTING
+void testPMSensor(unsigned int cycles, unsigned long sampleTime,
+                  unsigned long warmupTime) {
+  Serial.println();
+  Serial.println(F("Particulate Matter Sensor (SM-PWM-01C) testing"));
+  Serial.println(F("----------------------------------------------"));
+  Serial.println();
+  Serial.println(F("Initializing particulate matter sensor...."));
+  initPM();
+  Serial.println(F("Powering up particulate matter sensor...."));
+  startPM();
+  Serial.print(F("Waiting for sensor to warm up ("));
+  Serial.print(warmupTime/1000);
+  Serial.print(F("s)"));
+  printPMPauseProgress(warmupTime/1000,1000);
+  Serial.println();
+  Serial.println(F("Starting measurements...."));
+  startPMSampling();
+  
+  for (unsigned int k = 0; k < cycles; k++) {
+    Serial.println();
+    Serial.print(F("Sampling ("));
+    Serial.print(sampleTime/1000);
+    Serial.print(F("s)"));
+    printPMPauseProgress(sampleTime/1000,1000);
+    Serial.println();
+    processPM();
+    
+    // If PM_TESTING is defined, processPM() already writes
+    // measurement info to serial.
+    #if !defined(PM_TESTING)
+    // Arduino implementation of printf drops %f support to reduce
+    // memory usage.  We use dsostrf instead.
+    char sbuffer[16];
+    Serial.println(F("Results:"));
+    //sprintf(sbuffer,"%8.3f",(double)pmDensity02);
+    dtostrf(pmDensity02,8,3,sbuffer);
+    Serial.print(F("  PM2  [ug/m^3]: "));
+    Serial.println(fbuffer);
+    //sprintf(sbuffer,"%8.3f",(double)pmDensity10);
+    dtostrf(pmDensity10,8,3,sbuffer);
+    Serial.print(F("  PM10 [ug/m^3]: "));
+    Serial.println(fbuffer);
+    #endif
+  }
+  
+  Serial.println();
+  Serial.println(F("Stopping measurements...."));
+  stopPMSampling();
+  Serial.println(F("Powering down particulate matter sensor...."));
+  stopPM();
+  Serial.println(F("Particulate matter sensor testing is complete."));
+  Serial.println();
+}
+#endif
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 
 

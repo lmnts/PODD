@@ -334,8 +334,8 @@ void particleWarmup() {
 
 void particleLog() {
   updatePM();
-  double c2_5 = getPM2_5();
-  double c10 = getPM10();
+  double c2_5 = getPM2_5_OLD();
+  double c10 = getPM10_OLD();
 
   String PM2_5str = "";
   String PM10str = "";
