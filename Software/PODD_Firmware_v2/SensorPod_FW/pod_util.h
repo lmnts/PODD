@@ -57,6 +57,10 @@ void pinCheck(const int pin, const String s="");
 // debugging.
 void poddPinChecks();
 
+// Prints compilation info to serial output, with optional prefix
+// for each output line and name of compilation file (defaults to
+// main compilation input file).
+void printCompilationInfo(const String prefix="", const String file=__BASE_FILE__);
+
 
 //==============================================================================
-

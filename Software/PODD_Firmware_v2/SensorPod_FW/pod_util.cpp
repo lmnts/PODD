@@ -135,5 +135,36 @@ void poddPinChecks() {
 }
 
 
-//==============================================================================
+//------------------------------------------------------------------------------
+// Prints compilation info to serial output, with optional prefix
+// for each output line and name of compilation file (defaults to
+// main compilation input file).  Info includes compilation file,
+// compilation date & time, compiler version, Arduino version.
+void printCompilationInfo(const String prefix, const String file) {
+  if (!file.equals("")) {
+    Serial.print(prefix);
+    Serial.print(F("Compilation file:    "));
+    // Get rid of any leading directories in file name
+    int loc = max(file.lastIndexOf('\\'),file.lastIndexOf('/')) + 1;
+    Serial.println(file.substring(loc));
+  }
+  Serial.print(prefix);
+  Serial.println(F("Compilation date:    "  __DATE__ " " __TIME__));
+  #if defined(__VERSION__)
+  Serial.print(prefix);
+  Serial.println(F("Compiler version:    " __VERSION__));
+  #endif
+  #if defined(ARDUINO)
+  Serial.print(prefix);
+  Serial.print(  F("Arduino version:     "));
+  Serial.println(ARDUINO,DEC);
+  #endif
+  #if defined(TEENSYDUINO)
+  Serial.print(prefix);
+  Serial.print(  F("Teensyduino version: "));
+  Serial.println(TEENSYDUINO,DEC);
+  #endif
+}
 
+
+//==============================================================================

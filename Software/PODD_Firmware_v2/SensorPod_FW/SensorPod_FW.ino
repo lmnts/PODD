@@ -1,4 +1,3 @@
-
 /*
  * SensorPod_FW  
  * 2017 - Nick Turner and Morgan Redfield
@@ -55,32 +54,18 @@ void setup() {
   
   // Compilation info
   Serial.println(F("PODD firmware starting...."));
-  // Get rid of any leading directories in file name
-  //Serial.println(F("  Compilation file: "  __FILE__));
-  if (strrchr(__FILE__,'\\') != NULL) {
-    Serial.print(F("  Compilation file: "));
-    Serial.println(strrchr(__FILE__,'\\')+1);
-  } else if (strrchr(__FILE__,'/') != NULL) {
-    Serial.print(F("  Compilation file: "));
-    Serial.println(strrchr(__FILE__,'/')+1);
-  } else {
-    Serial.println(F("  Compilation file: "  __FILE__));
-  }
-  Serial.println(F("  Compilation date: "  __DATE__ " " __TIME__));
-  Serial.println(F("  Compiler version: " __VERSION__));
-  Serial.print(  F("  Arduino version:  "));
-  Serial.println(ARDUINO,DEC);
+  printCompilationInfo("  ",__FILE__);
   Serial.println();
   delay(1000);
-
+  
   #ifdef PM_TESTING
   testPMSensor(-1,30000,60000);
   #endif
-
+  
   Serial.println(LINE);
   Serial.println(F("Starting setup...."));
   delay(2000);
-
+  
   Serial.println(F("Setting up XBee...."));
   initXBee();
   
@@ -89,20 +74,20 @@ void setup() {
   
   Serial.println(F("Setting up RTC...."));
   setupRTC();
-
+  
   // Ensure LED is off
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
-
+  
   Serial.println(F("Setting up sensors...."));
   sensorSetup();
   if (verifySensors()) {
 	  digitalWrite(LED_PIN, HIGH);
   }
-
+  
   Serial.println(F("Setting up SD...."));
   setupPodSD();
-
+  
   Serial.println(F("Setting up ethernet...."));
   ethernetSetup();
   
@@ -112,13 +97,13 @@ void setup() {
   
   loadPodConfig();
   podIntro();
-
+  
   Serial.println(F("Starting SD logging...."));
   setupSDLogging();
   
   Serial.println(F("Starting sensor timers...."));
   setupSensorTimers();
-
+  
   // power optimizations
   if (getRatePM() <= 0) {
     Serial.println(F("Powering down particulate matter sensor...."));
@@ -129,11 +114,11 @@ void setup() {
       Serial.println(F("Powering down particulate matter sensor until next reading...."));
       digitalWrite(PM_ENABLE, LOW);
     }
-
+    
     //Disable Ethernet for Drones
     Serial.println(F("Powering down ethernet...."));
     digitalWrite(ETHERNET_EN, LOW);
-
+    
     #define SERIAL_DEBUG
     #if defined(SERIAL_DEBUG)
       Serial.println(F("DEBUG: Drone serial output will not be disabled."));
@@ -156,7 +141,7 @@ void setup() {
   // by the time we get here, the user has either configured the SensorPod
   // or it's been around a minute and a half and the setup has timed out
   digitalWrite(LED_PIN, LOW);
-
+  
   // Begin background process to pull data from the XBee for later
   // processing.  Currently only necessary for the coordinator.
   if(getModeCoord()){
@@ -173,16 +158,18 @@ void setup() {
   #ifdef DEBUG
   //writeDebugLog(F("Fxn: setup()"));
   #endif
-
+  
   sei(); //Enable interrupts
 }
+
 
 //--------------------------------------------------------------------------------------------- [loop]
 void loop() {
   // digitalWrite(CP, HIGH);
   // checks to see if start date and time have passed or not:
-  if(ethernetOnline() && getModeCoord())
+  if(ethernetOnline() && getModeCoord()) {
     ethernetMaintain();
-
+  }
+  
   handleLoopLogging();
 }
