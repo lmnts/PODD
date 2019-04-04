@@ -21,6 +21,10 @@ Those marked with (†) are not in the Arduino library repository and must be in
   <https://github.com/SlashDevin/NeoSWSerial>
 - **SparkFun DS3234 RTC (†):**
   <https://github.com/sparkfun/SparkFun_DS3234_RTC_Arduino_Library>
+- **Sensirion SPS30 (†):**
+  <https://github.com/paulvha/sps30>
+
+  Paul van Haastrecht's SPS30 library is easier to use than the official Sensirion Arduino libraries.  The version here has been modified to exclude I2C code (not used by PODDs).
 - **Time library:**
   <https://github.com/PaulStoffregen/Time>
 - **TimeAlarms (†):**
