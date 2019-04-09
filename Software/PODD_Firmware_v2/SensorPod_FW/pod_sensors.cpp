@@ -1,23 +1,24 @@
 
 /*
- * pod_sensors.cpp
- * 2017 - Nick Turner and Morgan Redfield
- * Licensed under the AGPLv3. For full license see LICENSE.md 
- * Copyright (c) 2017 LMN Architects, LLC
- * 
- * Handle setup and reading from various sensors.
- */
+   pod_sensors.cpp
+   2017 - Nick Turner and Morgan Redfield
+   Licensed under the AGPLv3. For full license see LICENSE.md
+   Copyright (c) 2017 LMN Architects, LLC
+
+   Handle setup and reading from various sensors.
+*/
 
 #include "pod_sensors.h"
 
-//#include <SoftwareSerial.h>
-#include <NeoSWSerial.h>
+#include <SoftwareSerial.h>
+//#include <NeoSWSerial.h>
 #include <AsyncDelay.h>
 #include <ClosedCube_OPT3001.h>
 #include "cozir.h"
 #include <Wire.h>
 #include <HIH61xx.h>
 #include <TimerOne.h>
+#include <sps30.h>
 
 
 // SOUND
@@ -41,12 +42,12 @@ ClosedCube_OPT3001 opt3001;
 // SoftwareSerial, but they have their own issues: AltSoftSerial
 // requires specific Rx/Tx pins and NeoSWSerial uses one of the
 // hardware timers (hopefully nothing else is trying to use it...).
-//SoftwareSerial nss(CO2_PIN_RX,CO2_PIN_TX);
-NeoSWSerial nss(CO2_PIN_RX,CO2_PIN_TX);
+SoftwareSerial CO2_serial(CO2_PIN_RX,CO2_PIN_TX);
+//NeoSWSerial CO2_serial(CO2_PIN_RX, CO2_PIN_TX);
 // Note COZIR library modified to remove Serial.begin() call in
 // constructor as we do _not_ want the serial interface running
 // except when we actually want to communicate with the sensor.
-COZIR czr(nss);
+COZIR czr(CO2_serial);
 
 // Particulate Matter (PM) Sensor
 AsyncDelay samplingPM;
@@ -101,6 +102,23 @@ volatile unsigned long pmPulseT0[4];
 volatile unsigned long pmPulseTSum[4];
 #endif
 
+// Particulate Matter (PM) Sensor: Sensirion SPS30
+// Note Rx/Tx labeled for Teensy side of serial
+// (reverse of Rx/Tx label on PM sensor).
+// 5-pin connected oriented on PCB such that disconnected SEL line
+// is on bottom, where orientations is such tat teensy-side of PCB
+// is "top".
+#define PM_PIN_RX PIN_C6
+#define PM_PIN_TX PIN_C5
+// SPS30 object.
+// Will construct own software serial object internally.
+// This class uses SoftwareSerial, which conflicts with the
+// NeoSWSerial library that is preferable for the CO2 sensor....
+SPS30 sps30;
+bool pmPowered = false;
+bool pmRunning = false;
+sps_values pmData;
+
 // CO
 //#define numCoRead 4
 //int samples[numCoRead];
@@ -131,7 +149,7 @@ void sensorSetup() {
     Serial.print(F("OPT3001 configuration error: "));
     Serial.println(opt3001Err);
   }
-  
+
   // PM Sensor
   pinMode(PM_PIN_2_5, INPUT);
   pinMode(PM_PIN_10, INPUT);
@@ -143,15 +161,17 @@ void sensorSetup() {
   hih.initialise();
 
   // COZIR sensor communicates at 9600 baud
-  nss.begin(9600);
-  nss.listen();
+  CO2_serial.begin(9600);
+  CO2_serial.listen();
   czr.SetOperatingMode(CZR_POLLING);
   // Suspend serial interface as this software serial can disrupt
   // other serial interfaces (and we do not need it except when
   // communicating with CO2 sensor).
-  nss.ignore();
+  // NeoSWSerial can toggle serial interface with just listen/ignore:
+  //CO2_serial.ignore();
+  // SoftwareSerial has no ignore and must be turned off...
   //Serial.println("DEBUGGING: Turning off software serial (CO2 interface).");
-  //nss.end();
+  CO2_serial.end();
 }
 
 bool verifySensors() {
@@ -166,7 +186,7 @@ bool verifySensors() {
     Serial.println(F("Humidity T Failure: ") + String(tval_f));
     return false;
   }
- 
+
   tval_f = getRHHum();
   if (tval_f < MIN_RH_HUM || tval_f > MAX_RX_HUM) {
     Serial.println(F("Humidity RH Failure: ") + String(tval_f));
@@ -214,7 +234,7 @@ bool verifySensors() {
     Serial.println(F("PM 10 Failure: ") + String(tval_f));
     return false;
   }
-  
+
   return true;
 }
 
@@ -243,12 +263,12 @@ void calibrateCO2() {
 
 float getRHTemp() {
   hih.read();  // Blocks for ~45ms as sensor is read
-  return hih.getAmbientTemp()/100.0;  // hih gives temp x 100
+  return hih.getAmbientTemp() / 100.0; // hih gives temp x 100
 }
 
 float getRHHum() {
   hih.read();  // Blocks for ~45ms as sensor is read
-  return hih.getRelHumidity()/100.0;  // hih gives RH[%] x 100
+  return hih.getRelHumidity() / 100.0; // hih gives RH[%] x 100
 }
 
 float getLight() {
@@ -295,7 +315,7 @@ double getSound() {
     {
       signalMax = knock;  // save just the max levels
     }
-      else if (knock < signalMin)
+    else if (knock < signalMin)
     {
       signalMin = knock;  // save just the min levels
     }
@@ -307,9 +327,16 @@ double getSound() {
 
 int getCO2() {
   // Only enable software serial during interaction
-  nss.listen();
+  // SoftwareSerial must restart interface and listen,
+  // NeoSWSerial need only listen.
+  CO2_serial.begin(9600);
+  CO2_serial.listen();
   int c = czr.CO2();
-  nss.ignore();
+  // NeoSWSerial can toggle serial interface with just listen/ignore:
+  //CO2_serial.ignore();
+  // SoftwareSerial has no ignore and must be turned off...
+  //Serial.println("DEBUGGING: Turning off software serial (CO2 interface).");
+  CO2_serial.end();
   return c;
 }
 
@@ -323,7 +350,7 @@ float getCO() {
 void updatePM() {
   lowpulseoccupancy1 = 0;
   lowpulseoccupancy2 = 0;
-  
+
   //PM sampling starts here
   samplingPM.start(sampletime_PM, AsyncDelay::MILLIS);
   Serial.println(F("PM sampling started...."));
@@ -353,7 +380,7 @@ void updatePM() {
   concentration2_5 = 1.1 * pow(ratio1, 3) - 3.8 * pow(ratio1, 2) + 520 * ratio1 + 0.62; // using spec sheet curve
   Serial.print(F("PM 2.5: "));
   Serial.println(concentration2_5, 3);
-  
+
   ratio2 = lowpulseoccupancy2 / (sampletime_PM);
   ratio2 = (ratio2 * 0.001);
   concentration10 = 1.1 * pow(ratio2, 3) - 3.8 * pow(ratio2, 2) + 520 * ratio2 + 0.62; // using spec sheet curve
@@ -370,48 +397,334 @@ float getPM10_OLD() {
 }
 
 
-// Particular Matter Sensor --------------------------------------------
+// Particular Matter Sensor [SPS30] ------------------------------------
 
 /* Initializes the particulate matter sensor, but does not power it up. */
 void initPM() {
+  //pinMode(PM_PIN_P1,INPUT);
+  //pinMode(PM_PIN_P2,INPUT);
+  //pinMode(PM_ENABLE,OUTPUT);
+  sps30.SetSerialPin(PM_PIN_RX, PM_PIN_TX);
+  digitalWrite(PM_ENABLE, LOW);
+  resetPMData();
+}
+
+
+/* Power up the particulate matter sensor.
+   Does not start sampling; should draw lower power in this idle
+   state (< 8 mA). */
+void powerOnPM() {
+  if (pmPowered) return;
+  digitalWrite(PM_ENABLE, HIGH);
+  delay(100);
+  //sps30.begin(SOFTWARE_SERIAL);
+  if (sps30.begin(SOFTWARE_SERIAL)) {
+    Serial.println("Successfully started PM serial interface.");
+  } else {
+    Serial.println("Could not start PM serial interface.");
+  }
+  pmPowered = true;
+}
+
+
+/* Power down the particulate matter sensor. */
+void powerOffPM() {
+  if (!pmPowered) return;
+  if (pmRunning) {
+    stopPM();
+  }
+  delay(100);
+  digitalWrite(PM_ENABLE, LOW);
+  pmPowered = false;
+}
+
+
+/* Indicates if the particulate matter sensor is currently powered on. */
+bool isPMPowered() {
+  return pmPowered;
+}
+
+
+/* Start taking measurements with the particulate matter sensor.
+   Measurements are continually taken every second whether or not
+   the sensor is polled.  The sensor takes ~ 8 seconds to warm up
+   before the first valid data is available [cannot seem to find
+   this number in documentation...].  Sensor draws ~ 60 mA while
+   running.
+
+   Argument indicates if routine should wait long enough for sensor
+   to start up and begin taking measurements. */
+void startPM(bool wait) {
+  if (pmRunning) return;
+  if (!pmPowered) powerOnPM();
+  //if (!sps30.start()) return;
+  if (sps30.start()) {
+    Serial.println("Successfully started PM.");
+  } else {
+    Serial.println("Could not start PM.");
+    return;
+  }
+  //if (wait) delay(10000);  // Extra 2 seconds to ensure measurements start
+  if (wait) delay(2000);  // Where did 8 second warmup come from...?
+  pmRunning = true;
+}
+
+
+/* Stop the particulate matter sensor from taking measurements.
+   Reduces power usage from ~ 60 mA to < 8 mA. */
+void stopPM() {
+  if (!pmRunning) return;
+  sps30.stop();
+}
+
+
+/* Indicates if the particulate matter sensor is currently taking data. */
+bool isPMRunning() {
+  return pmRunning;
+}
+
+
+/* Tests communication with the particulate matter sensor. */
+bool probePM() {
+  if (!pmPowered) return false;
+  if (!pmRunning) return false;
+  return sps30.probe();
+}
+
+
+/* Cleans the particulate matter sensor by running the fan at high
+   speed for 10 seconds.  Sensor must be powered and running.
+   Returns boolean indicating if cleaning process occurred.
+
+   Argument indicates if routine should wait long enough for sensor
+   cleaning to complete. */
+bool cleanPM(bool wait) {
+  if (!pmPowered) return false;
+  if (!pmRunning) return false;
+  if (!sps30.clean()) return false;
+  if (wait) delay(12000);  // Need 10s, or 10s + spinup/down?
+  return true;
+}
+
+
+/*  Sets the particulate matter sensor data to invalid values. */
+void resetPMData() {
+  pmData.MassPM1  = -1;
+  pmData.MassPM2  = -1;
+  pmData.MassPM4  = -1;
+  pmData.MassPM10 = -1;
+  pmData.NumPM0   = -1;
+  pmData.NumPM1   = -1;
+  pmData.NumPM2   = -1;
+  pmData.NumPM4   = -1;
+  pmData.NumPM10  = -1;
+  pmData.PartSize = -1;
+}
+
+
+/* Retrieves measurements from the particulate matter sensor.
+   Returns true on success.  Actual data values can be accessed
+   through below routines.  Sensor must be powered on and
+   running; new data is only available every 1 second
+   (retrieval will fail if attempting to too soon after last
+   retrieval). */
+bool retrievePMData() {
+  if (!pmPowered) return false;
+  if (!pmRunning) return false;
+  if (sps30.GetValues(&pmData) != ERR_OK) {
+    resetPMData();
+    return false;
+  }
+  return true;
+}
+
+
+/* Returns the most recently retrieved PM_2.5 measurement in ug/m^3.
+   PM_2.5 is a measurement of particulate matter 2.5 um in diameter
+   or smaller.  Sensor's particle size threshold is ~ 0.3 um.
+   Returns -1 if measurement failed/invalid. */
+float getPM2_5() {
+  return pmData.MassPM2;
+}
+
+
+/* Returns the most recently retrieved PM_10 measurement in ug/m^3.
+   PM_10 is a measurement of particulate matter 10 um in diameter
+   or smaller.  Sensor's particle size threshold is ~ 0.3 um.
+   Returns -1 if measurement failed/invalid. */
+float getPM10() {
+  return pmData.MassPM10;
+}
+
+
+/* Utility function to write dots to serial output over N consecutive
+   pause intervals [ms]. */
+// Sensor testing >>>>>>>>>>>>>>>>>>>>>>
+#ifdef PM_TESTING
+void printPMPauseProgress(unsigned int N, unsigned long pause) {
+  for (unsigned int k = 0; k < N; k++) {
+    delay(pause);
+    Serial.print('.');
+    Serial.flush();
+  }
+}
+#endif
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+/* Particulate matter sensor (Sensirion SPS30) testing routine.
+   Will sample the sensor for the given number of cycles after an
+   initial warmup period.  Sample and warmup periods in
+   milliseconds. */
+// Sensor testing >>>>>>>>>>>>>>>>>>>>>>
+#ifdef PM_TESTING
+void testPMSensor(unsigned int cycles, unsigned long sampleInterval,
+                  unsigned long offTime, unsigned long idleTime) {
+  Serial.println();
+  Serial.println(F("Particulate Matter Sensor (Sensirion SPS30) testing"));
+  Serial.println(F("---------------------------------------------------"));
+  Serial.println();
+  Serial.println(F("Initializing particulate matter sensor...."));
+  initPM();
+  Serial.print(F("Waiting in unpowered state ("));
+  Serial.print(offTime/1000);
+  Serial.print(F("s)"));
+  printPMPauseProgress(offTime/1000,1000);
+  Serial.println();
+  Serial.println(F("Powering up particulate matter sensor...."));
+  powerOnPM();
+  Serial.print(F("Waiting in idle mode ("));
+  Serial.print(idleTime/1000);
+  Serial.print(F("s)"));
+  printPMPauseProgress(idleTime/1000,1000);
+  Serial.println();
+  
+  char buf[32];
+  int sn_err = sps30.GetSerialNumber(buf,32);
+  Serial.print("Serial number error code: ");
+  Serial.println(sn_err);
+  
+  Serial.println(F("Starting measurements...."));
+  startPM(false);
+  unsigned long t0 = millis();
+  
+  // Arduino implementation of printf drops %f support to reduce
+  // memory usage.  We use dsostrf instead.
+  char sbuffer[128];
+  char fbuffers[10][8];
+
+  // Table header
+  Serial.println();
+  sprintf(sbuffer," %8s  %27s  %34s  %8s",
+          "time[ms]"," mass concentration [ug/m3]",
+          "   number concentration [#/cm3]   "," average");
+  Serial.println(sbuffer);
+  sprintf(sbuffer," %8s  %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %8s",
+          "        "," PM1.0"," PM2.5"," PM4.0","PM10.0",
+          "PM0.5"," PM1.0"," PM2.5"," PM4.0","PM10.0","size[um]");
+  Serial.println(sbuffer);
+  sprintf(sbuffer," %8s  %27s  %34s  %8s",
+          "--------","---------------------------",
+          "----------------------------------","--------");
+  Serial.println(sbuffer);
+
+  for (unsigned int k = 0; k < cycles; k++) {
+    delay(sampleInterval);
+    unsigned long t = millis() - t0;
+    if (!probePM()) {
+      sprintf(sbuffer," %8ld  %73s",
+              t,"                       <failed to probe PM sensor>                       ");
+      Serial.println(sbuffer);
+      continue;
+    }
+    if (!retrievePMData()) {
+      sprintf(sbuffer," %8ld  %73s",
+              t,"                    <failed to retrieve sensor data>                     ");
+      Serial.println(sbuffer);
+      continue;
+    }
+    dtostrf(pmData.MassPM1,6,2,fbuffers[0]);
+    dtostrf(pmData.MassPM2,6,2,fbuffers[1]);
+    dtostrf(pmData.MassPM4,6,2,fbuffers[2]);
+    dtostrf(pmData.MassPM10,6,2,fbuffers[3]);
+    dtostrf(pmData.NumPM0,6,2,fbuffers[4]);
+    dtostrf(pmData.NumPM1,6,2,fbuffers[5]);
+    dtostrf(pmData.NumPM2,6,2,fbuffers[6]);
+    dtostrf(pmData.NumPM4,6,2,fbuffers[7]);
+    dtostrf(pmData.NumPM10,6,2,fbuffers[8]);
+    dtostrf(pmData.PartSize,8,2,fbuffers[9]);
+    sprintf(sbuffer," %8ld  %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %8s",
+            t,fbuffers[0],fbuffers[1],fbuffers[2],fbuffers[3],
+            fbuffers[4],fbuffers[5],fbuffers[6],fbuffers[7],fbuffers[8],
+            fbuffers[9]);
+    Serial.println(sbuffer);
+  }
+
+  Serial.println();
+  Serial.println(F("Stopping measurements...."));
+  stopPM();
+  Serial.println(F("Powering down particulate matter sensor...."));
+  powerOffPM();
+  Serial.println(F("Particulate matter sensor testing is complete."));
+  Serial.println();
+}
+#endif
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+// Particular Matter Sensor [SM-PWM-01C] -------------------------------
+
+/* Initializes the particulate matter sensor, but does not power it up. */
+/*
+  void initPM() {
   pinMode(PM_PIN_P1,INPUT);
   pinMode(PM_PIN_P2,INPUT);
   pinMode(PM_ENABLE,OUTPUT);
   digitalWrite(PM_ENABLE,LOW);
-}
+  }
+*/
 
 
 /* Power up the particulate matter sensor.
    This should be done at least 90 seconds before sampling is performed:
    the heater element that draws the bulk of the power generates an air
    current through the sensor that takes time to stabilize. */
-void startPM() {
+/*
+  void startPM() {
   digitalWrite(PM_ENABLE,HIGH);
-}
+  sleep(100);
+  sps30.begin(SOFTWARE_SERIAL);
+  }
+*/
 
 
 /* Turn off power to the particulate matter sensor.
    If the sensor is currently sampling, any not-yet-processed data
    will be lost. */
-void stopPM() {
+/*
+  void stopPM() {
   if (pmSampling) stopPMSampling();
   digitalWrite(PM_ENABLE,LOW);
-}
+  }
+*/
 
 
 /* Indicates if the particulate matter sensor is currently taking data. */
-bool isPMSampling() {
+/*
+  bool isPMSampling() {
   return pmSampling;
-}
+  }
+*/
 
 
 /* Resets parameters used in particulate matter calculations. */
-void resetPMSampling() {
+/*
+  void resetPMSampling() {
   // Disable interrupts to prevent ISRs from changing values.
   // Store previous interrupt state so we can restore it afterwards.
   uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
   cli();  // Disable interrupts
-  
+
   // Set pulse start times to now in case currently in pulse
   // or pulse begins after this routine but before ISR can run.
   unsigned long t0m = millis();
@@ -433,7 +746,7 @@ void resetPMSampling() {
     pmPulse1State = HIGH;
     pmPulse2State = HIGH;
   }
-  
+
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
   #ifdef PM_TESTING
   pmPulseState = B11;
@@ -444,16 +757,18 @@ void resetPMSampling() {
   }
   #endif
   //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-  
+
   // Restore interrupt status
   SREG = oldSREG;
-}
+  }
+*/
 
 
-/* Process a particulate matter sensor state change (start/end 
+/* Process a particulate matter sensor state change (start/end
    of pulse).  Intended to be run as an ISR on each of the two
    sensor pulse pins. */
-void processPMPulseISR() {
+/*
+  void processPMPulseISR() {
   if (!pmSampling) return;
   unsigned long t0u = micros();
   uint8_t state;
@@ -483,7 +798,7 @@ void processPMPulseISR() {
       pmPulse2N++;
     }
   }
-  
+
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
   #ifdef PM_TESTING
   uint8_t pulseState =   (digitalRead(PM_PIN_P1) == HIGH ? 1 : 0)
@@ -496,14 +811,16 @@ void processPMPulseISR() {
   }
   #endif
   //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-}
+  }
+*/
 
 
-/* Perform particulate matter sensor calculations based upon data 
+/* Perform particulate matter sensor calculations based upon data
    collected since last call to processPM() or startPM().  Longer
    collection periods increase accuracy & precision; 10+ seconds
    is strongly suggested, but 30+ seconds is preferrable. */
-void processPM() {
+/*
+  void processPM() {
   if (!pmSampling) {
     Serial.println("Warning: No new particulate matter data to process.");
     Serial.println("  Using old results.");
@@ -513,10 +830,10 @@ void processPM() {
   // Store previous interrupt state so we can restore it afterwards.
   uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
   cli();  // Disable interrupts
-  
+
   unsigned long t0m = millis();
   unsigned long t0u = micros();
-  
+
   // Account for any incomplete pulses
   if (pmPulse1State == LOW) {
       pmPulse1TSum += (t0u - pmPulse1T0);
@@ -526,7 +843,7 @@ void processPM() {
       pmPulse2TSum += (t0u - pmPulse2T0);
       pmPulse2N++;  // Cannot add 0.5...
   }
-  
+
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
   #ifdef PM_TESTING
   uint8_t pulseState =   (digitalRead(PM_PIN_P1) == HIGH ? 1 : 0)
@@ -537,7 +854,7 @@ void processPM() {
   pmPulseState = pulseState;
   #endif
   //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-  
+
   // Copy relevant shared variables to local variables so we can
   // quickly re-enable interrupts.
   unsigned long _pmSampleT0 = pmSampleT0;
@@ -559,14 +876,14 @@ void processPM() {
   }
   #endif
   //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-  
+
   // Restore interrupt status.
   // Re-enables interrupts if they were previously active.
   SREG = oldSREG;
-  
+
   // Length of sampling interval [ms]
   unsigned long sampleInterval = t0m - _pmSampleT0;
-  
+
   // Low pulse occupancy: fraction of time spent low.
   // Must correct for different units (us vs ms).
   float inverseSampleInterval = 1 / (1000.0 * sampleInterval);
@@ -580,13 +897,13 @@ void processPM() {
   //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
   float lpo1 = _pmPulse1TSum * inverseSampleInterval;
   float lpo2 = _pmPulse2TSum * inverseSampleInterval;
-  
+
   // This polynomial approximation to the SM-PWM-01C data sheet's
   // LPO vs. Dust Concentration curve is from Dan Tudose's library:
   //   https://github.com/dantudose/SM-PWM-01A
   // Here, lpo is fraction (not percentage).
   //float density = 0.62 + lpo*(5.2e4 + lpo*(3.8e4 + lpo*(1.1e6)))
-  
+
   // This is a fit to the form lpo = 1 - exp(-a*density), a
   // functional form that would be appropriate for occupancy,
   // in certain limits.  Treating the minimum & maximum curves
@@ -603,7 +920,7 @@ void processPM() {
   // should be non-negative already.
   float density02 = abs(-9555*log(1-min(0.99,lpo1)));
   float density10 = abs(-9555*log(1-min(0.99,lpo2)));
-  
+
   // Particle densities given as a moving average with an
   // exponential weighting in time.
   if ((PM_SAMPLE_WEIGHTING_TIME > 0)) {
@@ -624,11 +941,11 @@ void processPM() {
     pmDensity02 = density02;
     pmDensity10 = density10;
   }
-  
+
   // Reset calculation parameters for next measurement interval
   resetPMSampling();
   pmLastSampleTime = millis();
-  
+
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
   #ifdef PM_TESTING
   // Arduino implementation of printf drops %f support to reduce
@@ -667,7 +984,7 @@ void processPM() {
   sprintf(sbuffer,"  Pulse 2 LPO, count, Tave[us], freq[Hz]:  %s %6d %8ld %s",
           fbuffer1,_pmPulse2N,pulseTAve,fbuffer2);
   Serial.println(sbuffer);
-  
+
   sprintf(sbuffer,"    %8s  %8s  %8s %6s  %8s  %8s  %8s",
           "Pulse 1","Pulse 2","  LPO   "," count","Ttot[us]","Tave[us]","freq[Hz]");
   Serial.println(sbuffer);
@@ -683,7 +1000,7 @@ void processPM() {
             fbuffer1,_pmPulseCount[k],_pmPulseTSum[k],pulseTAve,fbuffer2);
     Serial.println(sbuffer);
   }
-  
+
   unsigned long timeTotal = 0;
   for (int8_t k = 3; k >= 0; k--) {
     timeTotal += _pmPulseTSum[k];
@@ -692,12 +1009,14 @@ void processPM() {
   Serial.println(sbuffer);
   #endif
   //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-}
+  }
+*/
 
 
-/* Start particulate matter sensor sampling.  Ideally, particle 
+/* Start particulate matter sensor sampling.  Ideally, particle
    meter should be powered for 90+ seconds prior to sampling. */
-void startPMSampling() {
+/*
+  void startPMSampling() {
   // If already sampling, just reset sampling data
   if (pmSampling) {
     resetPMSampling();
@@ -711,7 +1030,7 @@ void startPMSampling() {
     delay(10);
   }
   resetPMSampling();
-  
+
   #ifdef __AVR__
   // Cannot use pin-change interrupts on most Teensy++ 2.0 pins
   // and the ones that can be used for interrupts are already
@@ -727,22 +1046,24 @@ void startPMSampling() {
   attachInterrupt(digitalPinToInterrupt(PM_PIN_P1),processPMPulseISR,CHANGE);
   attachInterrupt(digitalPinToInterrupt(PM_PIN_P2),processPMPulseISR,CHANGE);
   #endif
-  
+
   pmSampling = true;
-}
+  }
+*/
 
 
 /* Stop particulate matter sensor sampling.
    If currently sampling and sampling data has been unprocessed for
    at least updateInterval milliseconds, it will be processed: an
    updateInterval of -1 (the default) means data will not be processed. */
-void stopPMSampling(unsigned long updateInterval/*=-1*/) {
+/*
+  void stopPMSampling(unsigned long updateInterval=-1) {
   if (!pmSampling) return;
   if ((millis() - pmLastSampleTime) > updateInterval) {
     processPM();
   }
   pmSampling = false;
-  
+
   #ifdef __AVR__
   // Workaround for lack of pin-change interrupts for Teensy++
   // 2.0 pins.
@@ -752,7 +1073,8 @@ void stopPMSampling(unsigned long updateInterval/*=-1*/) {
   detachInterrupt(digitalPinToInterrupt(PM_PIN_P1));
   detachInterrupt(digitalPinToInterrupt(PM_PIN_P2));
   #endif
-}
+  }
+*/
 
 
 /* Returns the most recently measured/calculated PM_2 value in ug/m^3.
@@ -761,23 +1083,28 @@ void stopPMSampling(unsigned long updateInterval/*=-1*/) {
    very well, so this is only an approximation of PM_2.  Could treat
    this as PM_2.5, given the limitations in particle size
    discrimination. */
-float getPM2() {
+/*
+  float getPM2() {
   return pmDensity02;
-}
+  }
+*/
 
 
 /* Returns the most recently measured/calculated PM_10 value in ug/m^3.
    PM_10 is a measurement of particulate matter 10 um in diameter or
    smaller.  The sensor does not discriminate between particle sizes
    very well, so this is only an approximation of PM_10. */
-float getPM10() {
+/*
+  float getPM10() {
   return pmDensity10;
-}
+  }
+*/
 
 
 /* Utility function to write dots to serial output over N consecutive
    pause intervals [ms]. */
 // Sensor testing >>>>>>>>>>>>>>>>>>>>>>
+/*
 #ifdef PM_TESTING
 void printPMPauseProgress(unsigned int N, unsigned long pause) {
   for (unsigned int k = 0; k < N; k++) {
@@ -787,6 +1114,7 @@ void printPMPauseProgress(unsigned int N, unsigned long pause) {
   }
 }
 #endif
+*/
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 
@@ -795,6 +1123,7 @@ void printPMPauseProgress(unsigned int N, unsigned long pause) {
    initial warmup period.  Sample and warmup periods in
    milliseconds. */
 // Sensor testing >>>>>>>>>>>>>>>>>>>>>>
+/*
 #ifdef PM_TESTING
 void testPMSensor(unsigned int cycles, unsigned long sampleTime,
                   unsigned long warmupTime) {
@@ -813,7 +1142,7 @@ void testPMSensor(unsigned int cycles, unsigned long sampleTime,
   Serial.println();
   Serial.println(F("Starting measurements...."));
   startPMSampling();
-  
+
   for (unsigned int k = 0; k < cycles; k++) {
     Serial.println();
     Serial.print(F("Sampling ("));
@@ -822,7 +1151,7 @@ void testPMSensor(unsigned int cycles, unsigned long sampleTime,
     printPMPauseProgress(sampleTime/1000,1000);
     Serial.println();
     processPM();
-    
+
     // If PM_TESTING is defined, processPM() already writes
     // measurement info to serial.
     #if !defined(PM_TESTING)
@@ -840,7 +1169,7 @@ void testPMSensor(unsigned int cycles, unsigned long sampleTime,
     Serial.println(fbuffer);
     #endif
   }
-  
+
   Serial.println();
   Serial.println(F("Stopping measurements...."));
   stopPMSampling();
@@ -850,7 +1179,5 @@ void testPMSensor(unsigned int cycles, unsigned long sampleTime,
   Serial.println();
 }
 #endif
+*/
 //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-
-
-

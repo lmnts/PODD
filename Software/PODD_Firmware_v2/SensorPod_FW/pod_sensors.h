@@ -35,7 +35,7 @@
 
 // Define this to enable particulate matter sensor testing
 // output and routines.
-//#define PM_TESTING
+#define PM_TESTING
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
@@ -55,7 +55,29 @@ void updatePM();
 float getPM2_5_OLD();
 float getPM10_OLD();
 
+// Sensirion SPS30 Particulate Matter Sensor routines
+void initPM();
+void powerUpPM();
+void powerDownPM();
+bool isPMPowered();
+void startPM(bool wait=false);
+void stopPM();
+bool isPMRunning();
+bool probePM();
+bool cleanPM(bool wait=false);
+void resetPMData();
+bool retrievePMData();
+float getPM2_5();
+float getPM10();
+// Below only used for testing
+#ifdef PM_TESTING
+void printPMPauseProgress(unsigned int N, unsigned long pause = 1000);
+void testPMSensor(unsigned int cycles, unsigned long sampleTime = 3000,
+                  unsigned long offTime = 10000, unsigned long idleTime = 10000);
+#endif
+
 // SM-PWM-01C Particulate Matter Sensor routines
+/*
 void initPM();
 void startPM();
 void stopPM();
@@ -73,5 +95,6 @@ void printPMPauseProgress(unsigned int N, unsigned long pause = 1000);
 void testPMSensor(unsigned int cycles, unsigned long sampleTime = 30000,
                   unsigned long warmupTime = 90000);
 #endif
+*/
 
 #endif
