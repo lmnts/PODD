@@ -43,6 +43,8 @@
  * comment out the line below.
  */
 // Not used in PODDs
+// Note we need to add some guards around now-undefined I2C_Max_bytes
+// in sps30.cpp [as of 2019-04-05].
 //#define INCLUDE_I2C   1
 
 /**
@@ -289,7 +291,8 @@ class SPS30
     bool probe();
     bool reset() {return(Instruct(SER_RESET));}
     bool start() {return(Instruct(SER_START_MEASUREMENT));}
-    bool stop() {return(Instruct(SER_START_MEASUREMENT));}
+    // 190408 [bugfix]: START->STOP
+    bool stop() {return(Instruct(SER_STOP_MEASUREMENT));}
     bool clean() {return(Instruct(SER_START_FAN_CLEANING));}
 
     /**

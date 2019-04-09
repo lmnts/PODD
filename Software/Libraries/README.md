@@ -24,7 +24,7 @@ Those marked with (†) are not in the Arduino library repository and must be in
 - **Sensirion SPS30 (†):**
   <https://github.com/paulvha/sps30>
 
-  Paul van Haastrecht's SPS30 library is easier to use than the official Sensirion Arduino libraries.  The version here has been modified to exclude I2C code (not used by PODDs).
+  Paul van Haastrecht's SPS30 library is easier to use than the official Sensirion Arduino libraries.  The version here has been modified to exclude I2C code (not used by PODDs).  A bug has also been fixed in where the stop routine was sending the start command instead.
 - **Time library:**
   <https://github.com/PaulStoffregen/Time>
 - **TimeAlarms (†):**
