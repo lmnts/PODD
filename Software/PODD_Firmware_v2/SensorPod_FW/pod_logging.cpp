@@ -334,8 +334,8 @@ void particleWarmup() {
 
 void particleLog() {
   updatePM();
-  double c2_5 = getPM2_5_OLD();
-  double c10 = getPM10_OLD();
+  double c2_5 = getPM2_5();
+  double c10 = getPM10();
 
   String PM2_5str = "";
   String PM10str = "";
@@ -404,5 +404,3 @@ void writeDebugLog(String message) {
   Serial.println(F("Debug log file updated."));
 }
 #endif
-
-

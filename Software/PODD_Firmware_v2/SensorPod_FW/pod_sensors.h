@@ -35,7 +35,7 @@
 
 // Define this to enable particulate matter sensor testing
 // output and routines.
-#define PM_TESTING
+//#define PM_TESTING
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
@@ -51,11 +51,20 @@ double getGlobeTemp();
 double getSound();
 int getCO2();
 float getCO();
-void updatePM();
-float getPM2_5_OLD();
-float getPM10_OLD();
 
+// Uncomment to enable code for corresponding particulate matter sensor.
+// If none are defined, dummy code will be provided.
+//#define USE_OLD_PM
+//#define USE_SPS30_PM
+//#define USE_SMPWM01C_PM
+
+// Original particulate matter sensor routines
+#if defined(USE_OLD_PM)
+void updatePM();
+float getPM2_5();
+float getPM10();
 // Sensirion SPS30 Particulate Matter Sensor routines
+#elif defined(USE_SPS30_PM)
 void initPM();
 void powerUpPM();
 void powerDownPM();
@@ -75,9 +84,8 @@ void printPMPauseProgress(unsigned int N, unsigned long pause = 1000);
 void testPMSensor(unsigned int cycles, unsigned long sampleTime = 3000,
                   unsigned long offTime = 10000, unsigned long idleTime = 10000);
 #endif
-
 // SM-PWM-01C Particulate Matter Sensor routines
-/*
+#elif defined(USE_SMPWM01C_PM)
 void initPM();
 void startPM();
 void stopPM();
@@ -95,6 +103,22 @@ void printPMPauseProgress(unsigned int N, unsigned long pause = 1000);
 void testPMSensor(unsigned int cycles, unsigned long sampleTime = 30000,
                   unsigned long warmupTime = 90000);
 #endif
-*/
+// Dummy particulate matter sensor routines
+#else
+inline void initPM(){}
+inline void updatePM(){}
+inline void powerUpPM() {}
+inline void powerDownPM() {}
+inline bool isPMPowered(){return false;}
+inline void startPM(bool wait=false){}
+inline void stopPM(){}
+inline bool isPMRunning(){return false;}
+inline bool probePM(){return false;}
+inline bool cleanPM(bool wait=false);
+inline void resetPMData(){}
+inline bool retrievePMData(){return false;}
+inline float getPM2_5(){return -1;}
+inline float getPM10(){return -1;}
+#endif
 
 #endif
