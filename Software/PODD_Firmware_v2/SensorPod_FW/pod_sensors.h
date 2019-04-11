@@ -35,7 +35,7 @@
 
 // Define this to enable particulate matter sensor testing
 // output and routines.
-//#define PM_TESTING
+#define PM_TESTING
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
@@ -55,7 +55,7 @@ float getCO();
 // Uncomment to enable code for corresponding particulate matter sensor.
 // If none are defined, dummy code will be provided.
 //#define USE_OLD_PM
-//#define USE_SPS30_PM
+#define USE_SPS30_PM
 //#define USE_SMPWM01C_PM
 
 // Original particulate matter sensor routines
@@ -66,8 +66,8 @@ float getPM10();
 // Sensirion SPS30 Particulate Matter Sensor routines
 #elif defined(USE_SPS30_PM)
 void initPM();
-void powerUpPM();
-void powerDownPM();
+void powerOnPM();
+void powerOffPM();
 bool isPMPowered();
 void startPM(bool wait=false);
 void stopPM();
@@ -76,6 +76,7 @@ bool probePM();
 bool cleanPM(bool wait=false);
 void resetPMData();
 bool retrievePMData();
+inline void updatePM(){retrievePMData();}  // for compatibility
 float getPM2_5();
 float getPM10();
 // Below only used for testing

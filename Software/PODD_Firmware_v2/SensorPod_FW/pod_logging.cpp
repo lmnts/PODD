@@ -328,23 +328,33 @@ void coLog() {
 
 void particleWarmup() {
   digitalWrite(PM_ENABLE, HIGH);
+  powerOnPM();
+  startPM();
+  // Sensor does not return data for ~ 5 seconds,
+  // but takes 80-120 seconds for measurements to
+  // settle down (initially very inaccurate).
   Alarm.timerOnce(120,particleLog);
-  Serial.println("Warming up Particle Meter.");
+  Serial.println(F("Warming up particle meter."));
 }
 
 void particleLog() {
-  updatePM();
-  double c2_5 = getPM2_5();
-  double c10 = getPM10();
-
-  String PM2_5str = "";
-  String PM10str = "";
-  PM2_5str = String (c2_5);
-  PM10str = String (c10);
-  saveReading("", "", "", "", "", "", PM2_5str, PM10str, "");
+  //updatePM();
+  if (retrievePMData()) {
+    double c2_5 = getPM2_5();
+    double c10 = getPM10();
+    
+    String PM2_5str = "";
+    String PM10str = "";
+    PM2_5str = String (c2_5);
+    PM10str = String (c10);
+    saveReading("", "", "", "", "", "", PM2_5str, PM10str, "");
+  } else {
+    Serial.println(F("Failed to retrieve particle meter data."));
+  }
 
   if(getRatePM() > 120 and ! getModeCoord())
-    digitalWrite(PM_ENABLE, LOW);
+    //digitalWrite(PM_ENABLE, LOW);
+    powerOffPM();
 }
 
 //------------------------------------------------------------------------------

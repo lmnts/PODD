@@ -42,17 +42,17 @@
  * To EXCLUDE I2C communication, maybe for resource reasons,
  * comment out the line below.
  */
-// Not used in PODDs
-// Note we need to add some guards around now-undefined I2C_Max_bytes
-// in sps30.cpp [as of 2019-04-05].
-//#define INCLUDE_I2C   1
+// Note, if commented, we need to add some guards around now-undefined
+// I2C_Max_bytes in sps30.cpp [as of 2019-04-05].
+#define INCLUDE_I2C   1
 
 /**
  * To EXCLUDE the serial communication, maybe for resource reasons
  * as you board does not have a seperate serial, comment out the line below
  * It will also exclude Software_serial
  */
-#define INCLUDE_UART 1
+// Not used in PODDs
+//#define INCLUDE_UART 1
 
 /**
  * On some IDE / boards software Serial is not available

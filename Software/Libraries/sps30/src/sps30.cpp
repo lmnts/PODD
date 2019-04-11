@@ -543,14 +543,18 @@ uint8_t SPS30::GetValues(struct sps_values *v)
 
     // I2C will only provide valid data bytes depending on I2C buffer
     // if I2C buffer is less than 64 it only providing MASS info (set in constructor)
+    #if defined I2C_Max_bytes
     if (I2C_Max_bytes > 20) {
+    #endif
         v->NumPM0 = byte_to_float(offset + 16);
         v->NumPM1 = byte_to_float(offset + 20);
         v->NumPM2 = byte_to_float(offset + 24);
         v->NumPM4 = byte_to_float(offset + 28);
         v->NumPM10 = byte_to_float(offset + 32);
         v->PartSize = byte_to_float(offset + 36);
+    #if defined I2C_Max_bytes
     }
+    #endif
     return(ERR_OK);
 }
 

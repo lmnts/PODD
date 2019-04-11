@@ -59,8 +59,10 @@ void setup() {
   delay(1000);
   
   #ifdef PM_TESTING
+  Wire.begin();
   //testPMSensor(-1,5000,10000,10000);
-  testPMSensor(-1,5000,5000,5000);
+  //testPMSensor(-1,5000,5000,5000);
+  testPMSensor(-1,500,1,1);
   #endif
   
   Serial.println(LINE);

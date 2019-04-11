@@ -111,11 +111,27 @@ volatile unsigned long pmPulseTSum[4];
 
 // Particulate Matter (PM) Sensor: Sensirion SPS30
 #ifdef USE_SPS30_PM
+// PM pins and associated JST connector wire colors
+// (may be specific to this batch of connector wires):
+//   1 (blue):   5V
+//   2 (green):  SDA/RX
+//   3 (yellow): SCL/TX
+//   4 (black):  SEL
+//   5 (red):    GND
+// The sensor draws ~ 20 mA in idle mode and ~ 60 mA in
+// measurement mode.  New measurements are available every
+// 1 second, without any built-in warmup period.  However,
+// sensor readings seems to take 80-100 seconds to settle
+// down once measurement mode is started, so the sensor
+// should be run for that long before taking data for
+// accuracy purposes.
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-// ISSUE: The PODD board's voltage level translators are one-way
+// NOTE: The PODD board's voltage level translators are one-way
 //   and cannot be used for either serial or I2C communication.
-//   Voltage shifting will need to be done externally.  This
-//   sensor will not be used in the meantime.
+//   However, I2C relies on pull-up resistors to achieve the
+//   high level and is LVTTL 3.3V compatible, so the SPS30
+//   I2C lines be connected to the existing 3.3V I2C bus
+//   (PODD PCB has 2.2 kOhm pull-up resistors already).
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 // Note Rx/Tx labeled for Teensy side of serial
 // (reverse of Rx/Tx label on PM sensor).
@@ -125,9 +141,10 @@ volatile unsigned long pmPulseTSum[4];
 #define PM_PIN_RX PIN_C6
 #define PM_PIN_TX PIN_C5
 // SPS30 object.
-// Will construct own software serial object internally.
-// This class uses SoftwareSerial, which conflicts with the
-// NeoSWSerial library that is preferable for the CO2 sensor....
+// Uses default I2C (Wire) interface.  Note the 32-byte buffer
+// used by this class for teensy boards is insufficient to hold
+// all the data returned by the sensor: the mass densities can
+// be retrieved, but the number densities will not (set to zer0).
 SPS30 sps30;
 bool pmPowered = false;
 bool pmRunning = false;
@@ -437,7 +454,10 @@ void initPM() {
   //pinMode(PM_PIN_P1,INPUT);
   //pinMode(PM_PIN_P2,INPUT);
   //pinMode(PM_ENABLE,OUTPUT);
-  sps30.SetSerialPin(PM_PIN_RX, PM_PIN_TX);
+  // NOTE: PODD PCB only allows signals from PM to teensy and not
+  //   in the reverse direction, so serial will not work through
+  //   the board's PM lines.
+  //sps30.SetSerialPin(PM_PIN_RX, PM_PIN_TX);
   digitalWrite(PM_ENABLE, LOW);
   resetPMData();
 }
@@ -445,16 +465,25 @@ void initPM() {
 
 /* Power up the particulate matter sensor.
    Does not start sampling; should draw lower power in this idle
-   state (< 8 mA). */
+   state (documentation says < 8 mA, but PODD PCB + SPS30 system
+   draws closer to 20 mA). */
 void powerOnPM() {
   if (pmPowered) return;
   digitalWrite(PM_ENABLE, HIGH);
   delay(100);
   //sps30.begin(SOFTWARE_SERIAL);
+  /*
   if (sps30.begin(SOFTWARE_SERIAL)) {
     Serial.println("Successfully started PM serial interface.");
   } else {
     Serial.println("Could not start PM serial interface.");
+  }
+  */
+  //sps30.begin(I2C_COMMS);
+  if (sps30.begin(I2C_COMMS)) {
+    Serial.println("Successfully started PM I2C interface.");
+  } else {
+    Serial.println("Could not start PM I2C interface.");
   }
   pmPowered = true;
 }
@@ -480,10 +509,12 @@ bool isPMPowered() {
 
 /* Start taking measurements with the particulate matter sensor.
    Measurements are continually taken every second whether or not
-   the sensor is polled.  The sensor takes ~ 8 seconds to warm up
+   the sensor is polled.  The sensor takes ~ 5-8 seconds to warm up
    before the first valid data is available [cannot seem to find
-   this number in documentation...].  Sensor draws ~ 60 mA while
-   running.
+   this number in documentation, but find ~ 5 seconds from
+   experimentation].  Sensor draws ~ 60 mA while running.
+   Note the measurements themselves do not stabilize until 80-120
+   seconds after measurement mode is enabled.
 
    Argument indicates if routine should wait long enough for sensor
    to start up and begin taking measurements. */
@@ -497,8 +528,7 @@ void startPM(bool wait) {
     Serial.println("Could not start PM.");
     return;
   }
-  //if (wait) delay(10000);  // Extra 2 seconds to ensure measurements start
-  if (wait) delay(2000);  // Where did 8 second warmup come from...?
+  if (wait) delay(8000);
   pmRunning = true;
 }
 
