@@ -470,6 +470,7 @@ void initPM() {
 void powerOnPM() {
   if (pmPowered) return;
   digitalWrite(PM_ENABLE, HIGH);
+  Serial.println(F("Powered on PM."));
   delay(100);
   //sps30.begin(SOFTWARE_SERIAL);
   /*
@@ -481,9 +482,9 @@ void powerOnPM() {
   */
   //sps30.begin(I2C_COMMS);
   if (sps30.begin(I2C_COMMS)) {
-    Serial.println("Successfully started PM I2C interface.");
+    Serial.println(F("Successfully started PM I2C interface."));
   } else {
-    Serial.println("Could not start PM I2C interface.");
+    Serial.println(F("Could not start PM I2C interface."));
   }
   pmPowered = true;
 }
@@ -497,6 +498,7 @@ void powerOffPM() {
   }
   delay(100);
   digitalWrite(PM_ENABLE, LOW);
+  Serial.println(F("Powered off PM."));
   pmPowered = false;
 }
 
@@ -523,9 +525,9 @@ void startPM(bool wait) {
   if (!pmPowered) powerOnPM();
   //if (!sps30.start()) return;
   if (sps30.start()) {
-    Serial.println("Successfully started PM.");
+    Serial.println(F("Successfully started PM."));
   } else {
-    Serial.println("Could not start PM.");
+    Serial.println(F("Could not start PM."));
     return;
   }
   if (wait) delay(8000);
@@ -538,6 +540,7 @@ void startPM(bool wait) {
 void stopPM() {
   if (!pmRunning) return;
   sps30.stop();
+  Serial.println(F("Stopped PM."));
 }
 
 
@@ -565,6 +568,7 @@ bool cleanPM(bool wait) {
   if (!pmPowered) return false;
   if (!pmRunning) return false;
   if (!sps30.clean()) return false;
+  Serial.println(F("Cleaning PM.... (takes 12 seconds)"));
   if (wait) delay(12000);  // Need 10s, or 10s + spinup/down?
   return true;
 }
@@ -662,10 +666,13 @@ void testPMSensor(unsigned int cycles, unsigned long sampleInterval,
   printPMPauseProgress(idleTime/1000,1000);
   Serial.println();
   
+  // Debugging
+  /*
   char buf[32];
   int sn_err = sps30.GetSerialNumber(buf,32);
   Serial.print("Serial number error code: ");
   Serial.println(sn_err);
+  */
   
   Serial.println(F("Starting measurements...."));
   startPM(false);
