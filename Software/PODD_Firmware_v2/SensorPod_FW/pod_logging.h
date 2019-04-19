@@ -30,6 +30,7 @@ void setupSensorTimers();
 void handleLoopLogging();
 String formatTime();
 String formatDate();
+String formatDateTime();
 String getStringDatetime();
 void printTime();
 void setRTCTime(unsigned long epoch);

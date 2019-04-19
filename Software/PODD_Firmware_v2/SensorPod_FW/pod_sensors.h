@@ -35,7 +35,7 @@
 
 // Define this to enable particulate matter sensor testing
 // output and routines.
-#define PM_TESTING
+//#define PM_TESTING
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]

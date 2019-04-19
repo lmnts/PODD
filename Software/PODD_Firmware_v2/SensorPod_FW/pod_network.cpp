@@ -444,8 +444,12 @@ void xbeeConfig() {
     meshMode = "0"; //drone
   }
 
-  xbeeUpdateSetting("CE","0"); // Set device to drone before entering new network.
-  xbeeUpdateSetting("ID", getNetID());
+  // Use XBee Grove dev board + XCTU exclusively to configure
+  // XBee network, aside from coordinator mode: current firmware
+  // not set up to provide access to many of the useful settings
+  // and it is too easy to misconfigure the XBee. 
+  //xbeeUpdateSetting("CE","0"); // Set device to drone before entering new network.
+  //xbeeUpdateSetting("ID", getNetID());
   
   delay(1100);
   xbee.print("+++");
@@ -936,4 +940,3 @@ void sendNTPpacket(const char* address) {
   Udp.write(packetBuffer, NTP_PACKET_SIZE);
   Udp.endPacket();
 }
-

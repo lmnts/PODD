@@ -189,25 +189,37 @@ void setupSensorTimers() {
 }
 
 String formatTime(){
-  String h, colon, mt, s;
   rtc.update();
-  h = String(rtc.hour(), DEC);
-  colon = String(':');
-  mt = String(rtc.minute(), DEC);
-  s = String(rtc.second(), DEC);
+  char sbuffer[16];
+  // Switch to 24-hour mode, if necessary
+  int h = rtc.hour() + (rtc.is12Hour() && rtc.pm() ? 12 : 0);
+  sprintf(sbuffer,"%02d:%02d:%02d",h,rtc.minute(),rtc.second());
+  return sbuffer;
   
-  return (h + colon + mt + colon + s);
+  //String h, colon, mt, s;
+  //h = String(rtc.hour(), DEC);
+  //colon = String(':');
+  //mt = String(rtc.minute(), DEC);
+  //s = String(rtc.second(), DEC);
+  //return (h + colon + mt + colon + s);
 }
 
 String formatDate(){
-  String y, slash, m, d;
   rtc.update();
-  d = String (rtc.date(), DEC);
-  y = "20" + String (rtc.year(), DEC);
-  slash = String ('-');
-  m = String(rtc.month(), DEC);
+  char sbuffer[16];
+  sprintf(sbuffer,"20%02d-%02d-%02d",rtc.year(),rtc.month(),rtc.date());
+  return sbuffer;
   
-  return (y + slash + m + slash + d);
+  //String y, slash, m, d;
+  //d = String (rtc.date(), DEC);
+  //y = "20" + String (rtc.year(), DEC);
+  //slash = String ('-');
+  //m = String(rtc.month(), DEC);
+  //return (y + slash + m + slash + d);
+}
+
+String formatDateTime() {
+  return formatDate() + " " + formatTime();
 }
 
 String getStringDatetime() {
@@ -221,6 +233,7 @@ String getStringDatetime() {
 
 void printTime()
 {
+  rtc.update();
   Serial.print(String(rtc.hour()) + ": "); // Print hour
   if (rtc.minute() < 10)
     Serial.print('0'); // Print leading '0' for minute

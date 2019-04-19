@@ -12,6 +12,8 @@
 
 #include "Arduino.h"
 
+#include <limits.h>
+
 //--------------------------------------------------------------------------------------------- [Intro and Setup]
 
 #define setupTimeout 60000 // 60000ms = 1 min
@@ -36,17 +38,20 @@
 
 void podIntro();
 
-void savePodConfig();
 
 int podConfig();
+bool podConfigChanged();
+void clearPodConfigChanged();
+void loadPodConfig();
+void savePodConfig();
 
 void updateTimer(String sensor);
-
-void loadPodConfig();
 
 char * getServer();
 char * getDevID();
 char * getNetID();
+char * getProject();
+char * getRoom();
 
 bool getModeCoord();
 
@@ -59,5 +64,33 @@ int getRateCO2();
 int getRatePM();
 int getRateCO();
 
+void clearSerial();
+char getSerialChar(unsigned long timeout=0);
+String getSerialString(unsigned long timeout=0);
+
+char serialCharPrompt(String prompt, char default0=(char)(-1));
+String serialStringPrompt(String prompt, String default0="");
+bool serialYesNoPrompt(String prompt, bool reprompt, bool default0);
+bool serialTrueFalsePrompt(String prompt, bool reprompt, bool default0);
+bool serialBooleanPrompt(String prompt, bool reprompt, bool default0);
+bool serialBooleanPrompt(String prompt, bool reprompt, bool default0, char tchar, char fchar);
+int serialIntegerPrompt(String prompt, bool reprompt, int default0=INT_MIN);
+float serialFloatPrompt(String prompt, bool reprompt, float default0=NAN);
+
+void configureProjectSettings();
+void configureNodeSettings();
+void configureSensorTimingSettings();
+
+void interactivePrompt(unsigned long timeout=30000);
+void mainMenu();
+void showMenuProjectSettings();
+void showMenuNodeSettings();
+void showMenuSensorTimingEntry(String s, int v);
+void showMenuSensorTimingSettings();
+void showMenuClockSettings();
+
+void clockMenu();
+void configMenu();
+void sensorMenu();
 
 #endif

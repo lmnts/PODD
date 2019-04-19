@@ -61,8 +61,8 @@ void setup() {
   #ifdef PM_TESTING
   Wire.begin();
   //testPMSensor(-1,5000,10000,10000);
-  //testPMSensor(-1,5000,5000,5000);
-  testPMSensor(-1,500,1,1);
+  testPMSensor(-1,5000,5000,5000);
+  //testPMSensor(-1,500,1,1);
   #endif
   
   Serial.println(LINE);
@@ -77,6 +77,8 @@ void setup() {
   
   Serial.println(F("Setting up RTC...."));
   setupRTC();
+  Serial.print(F("  Current date/time: "));
+  Serial.println(formatDateTime());
   
   // Ensure LED is off
   pinMode(LED_PIN, OUTPUT);
@@ -99,7 +101,8 @@ void setup() {
   Serial.println();
   
   loadPodConfig();
-  podIntro();
+  //podIntro();
+  interactivePrompt();
   
   Serial.println(F("Starting SD logging...."));
   setupSDLogging();
