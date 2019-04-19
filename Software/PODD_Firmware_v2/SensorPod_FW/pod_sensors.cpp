@@ -437,9 +437,9 @@ void setCO2(int ppm) {
 bool probeCO2() {
   // Only enable serial interface while using it
   enableCO2Serial();
-  int v = cozirGetValue('Z');
+  bool b = cozirSendCommand('a');  // arbitrary info command
   disableCO2Serial();
-  return (v >= 0);
+  return b;
 }
 
 
@@ -479,44 +479,57 @@ String cozirCommandString(char c, int v) {
 // TODO: Have commands read start of response to check for success
 //  (CozIR always sends response starting with sent command character).
 
-/* Sends command string to the CozIR CO2 sensor over the serial interface. */
-void cozirSendCommand(String c) {
-  // Clear incoming serial buffer first
-  while(CO2_serial.available()) CO2_serial.read();
-  CO2_serial.print(c);
-  CO2_serial.print("\r\n");
-}
-
-
 /* Sends single character command and, optionally, an integer value to 
    the CozIR CO2 sensor over the serial interface.  If integer is
-   negative, it will be omitted. */
-void cozirSendCommand(char c, int v) {
-  cozirSendCommand(cozirCommandString(c,v));
+   negative, it will be omitted.  Returns true if communication was
+   successful (sensor returned command character).  Note the serial
+   buffer will be left with whatever the sensor sends after the
+   command character. */
+bool cozirSendCommand(char c, int v) {
+  //cozirSendCommand(cozirCommandString(c,v));
+  // Clear incoming serial buffer first
+  while(CO2_serial.available()) CO2_serial.read();
+  // Send command
+  String s = cozirCommandString(c,v);
+  CO2_serial.print(s);
+  CO2_serial.print("\r\n");
+  // Wait a limited time for response
+  const int TIMEOUT_MS = 20;
+  for (int k = 0; k < TIMEOUT_MS; k++) {
+    if (CO2_serial.available()) {
+      // First non-space character should be same as command
+      // character sent.
+      char c0 = CO2_serial.read();
+      if (c0 == ' ') continue;
+      return (c0 == c);
+      // Note post-command-character data received from sensor
+      // remains in the serial buffer.
+    }
+    delay(1);
+  }
+  // Timed out
+  return false;
 }
 
 
 /* Returns the (first) integer value provided by the CozIR CO2 sensor after
    sending the given command.  Returns -1 if something failed. */
-int cozirGetValue(String c) {
+int cozirGetValue(char c, int v) {
   // Send command
-  cozirSendCommand(c);
+  if (!cozirSendCommand(c,v)) return -1;
   
   // Retrieve response
+  // Note cozirSendCommand already stripped off command character
+  // from serial response.
   // This buffer is not large enough for commands that return
   // multiple data fields.
   const size_t BUFF_LEN = 12;
   size_t n = 0;
   char buff[BUFF_LEN];
-  // Wait up to 100 ms for response
-  for (int k = 0; k < 100; k++) {
-    if (CO2_serial.available()) break;
-    delay(1);
-  }
-  if (!CO2_serial.available()) return -1;
   // Continue reading until no new input available for 2ms
   // (in case serial data still arriving).
   // Double while loops here are not redundant...
+  delay(2);
   while (CO2_serial.available()) {
     while (CO2_serial.available()) {
       if (n < BUFF_LEN-1) {
@@ -529,9 +542,8 @@ int cozirGetValue(String c) {
   buff[n] = '\0';
 
   // Parse response
-  // Starts with space (possibly), then single-character command,
-  // then a space, then the (first) integer number.
-  if (n < 3) return -1;
+  // Should begin with a space...
+  if (n < 2) return -1;
   // Standard Arduino routines do not include means to check
   // for invalid input, so we use following instead.
   //const char *buff = s.c_str();
@@ -539,13 +551,6 @@ int cozirGetValue(String c) {
   long l = strtol(buff,&end,10);
   if (end == buff) return -1;
   return (int)l;
-}
-
-
-/* Returns the (first) integer value provided by the CozIR CO2 sensor after
-   sending the given command.  Returns -1 if something failed. */
-int cozirGetValue(char c, int v) {
-  return cozirGetValue(cozirCommandString(c,v));
 }
 
 

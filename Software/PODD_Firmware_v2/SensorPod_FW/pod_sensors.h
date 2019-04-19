@@ -60,9 +60,7 @@ bool probeCO2();
 void enableCO2Serial();
 void disableCO2Serial();
 String cozirCommandString(char c, int v);
-void cozirSendCommand(String s);
-void cozirSendCommand(char c, int v=-1);
-int cozirGetValue(String c);
+bool cozirSendCommand(char c, int v=-1);
 int cozirGetValue(char c, int v=-1);
 
 
