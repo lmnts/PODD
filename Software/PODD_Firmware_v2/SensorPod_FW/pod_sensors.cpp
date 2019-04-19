@@ -50,7 +50,7 @@ NeoSWSerial CO2_serial(CO2_PIN_RX, CO2_PIN_TX);
 // Note COZIR library modified to remove Serial.begin() call in
 // constructor as we do _not_ want the serial interface running
 // except when we actually want to communicate with the sensor.
-COZIR czr(CO2_serial);
+//COZIR czr(CO2_serial);
 
 // Particulate Matter (PM) Sensor
 #ifdef USE_OLD_PM
@@ -194,6 +194,8 @@ void sensorSetup() {
 
   hih.initialise();
 
+  // CO2 sensor
+  /*
   // COZIR sensor communicates at 9600 baud
   CO2_serial.begin(9600);
   CO2_serial.listen();
@@ -207,6 +209,8 @@ void sensorSetup() {
   //CO2_serial.end();
   // SoftwareSerial has no ignore and must be turned off...
   //CO2_serial.end();
+  */
+  initCO2();
 }
 
 bool verifySensors() {
@@ -360,6 +364,7 @@ double getSound() {
   return SoundAmp;
 }
 
+/*
 int getCO2() {
   // Only enable software serial during interaction
   // SoftwareSerial must restart interface and listen,
@@ -375,9 +380,172 @@ int getCO2() {
   //CO2_serial.end();
   return c;
 }
+*/
 
 float getCO() {
   return analogRead(CoSpecSensor); // TODO: Conversion!
+}
+
+
+// CO2 Sensor [CozIR-A] ------------------------------------------------
+
+// Good reference for Arduino serial interface with CozIR CO2 sensor:
+//   https://github.com/roder/cozir
+
+
+/* Initializes the CO2 sensor. */
+void initCO2() {
+  // COZIR sensor communicates at 9600 baud
+  CO2_serial.begin(9600);
+  // Only enable serial interface while using it
+  enableCO2Serial();
+  // Set operating mode to polling
+  cozirSendCommand('K',2);
+  //czr.SetOperatingMode(CZR_POLLING);
+  // Set digital filter to 32: measurements are moving average of
+  // previous NN measurements, which are taken at 2 Hz.
+  cozirSendCommand('A',32);
+  disableCO2Serial();
+}
+
+
+/* Gets the current CO2 level, in ppm.  Returns -1 if something failed. */
+int getCO2() {
+  // Only enable serial interface while using it
+  enableCO2Serial();
+  //int v = czr.CO2();
+  int v = cozirGetValue('Z');
+  disableCO2Serial();
+  return v;
+}
+
+
+/* Sets the current CO2 level, in ppm.  Use to calibrate sensor. */
+void setCO2(int ppm) {
+  // Ignore invalid values
+  if (ppm <= 0) return;
+  if (ppm > 10000) return;
+  // Only enable serial interface while using it
+  enableCO2Serial();
+  //czr.CalibrateKnownGas((uint16_t)ppm);
+  cozirSendCommand('X',ppm);
+  disableCO2Serial();
+}
+
+
+/* Tests communication with the CO2 sensor. */
+bool probeCO2() {
+  // Only enable serial interface while using it
+  enableCO2Serial();
+  int v = cozirGetValue('Z');
+  disableCO2Serial();
+  return (v >= 0);
+}
+
+
+/* Enable serial interface with CO2 sensor. */
+void enableCO2Serial() {
+  // SoftwareSerial must restart interface and listen,
+  // NeoSWSerial need only listen.
+  //CO2_serial.begin(9600);
+  CO2_serial.listen();
+}
+
+
+/* Disable serial interface with CO2 sensor. */
+void disableCO2Serial() {
+  // NeoSWSerial can toggle serial interface with just listen/ignore:
+  CO2_serial.ignore();
+  // SoftwareSerial has no ignore and must be turned off...
+  //CO2_serial.end();
+}
+
+
+/* Converts single character command and, optionally, an integer value
+   to a valid CozIR CO2 sensor command string.  If integer is negative,
+   it will be omitted. */
+String cozirCommandString(char c, int v) {
+  if (v < 0) {
+    return String(c);
+  }
+  char buff[10];
+  // Require non-negative integers of limited range
+  uint16_t v0 = (uint16_t)(v > 65535 ? 65535 : v);
+  sprintf(buff,"%c %u",c,v0);
+  return String(buff);
+}
+
+
+// TODO: Have commands read start of response to check for success
+//  (CozIR always sends response starting with sent command character).
+
+/* Sends command string to the CozIR CO2 sensor over the serial interface. */
+void cozirSendCommand(String c) {
+  // Clear incoming serial buffer first
+  while(CO2_serial.available()) CO2_serial.read();
+  CO2_serial.print(c);
+  CO2_serial.print("\r\n");
+}
+
+
+/* Sends single character command and, optionally, an integer value to 
+   the CozIR CO2 sensor over the serial interface.  If integer is
+   negative, it will be omitted. */
+void cozirSendCommand(char c, int v) {
+  cozirSendCommand(cozirCommandString(c,v));
+}
+
+
+/* Returns the (first) integer value provided by the CozIR CO2 sensor after
+   sending the given command.  Returns -1 if something failed. */
+int cozirGetValue(String c) {
+  // Send command
+  cozirSendCommand(c);
+  
+  // Retrieve response
+  // This buffer is not large enough for commands that return
+  // multiple data fields.
+  const size_t BUFF_LEN = 12;
+  size_t n = 0;
+  char buff[BUFF_LEN];
+  // Wait up to 100 ms for response
+  for (int k = 0; k < 100; k++) {
+    if (CO2_serial.available()) break;
+    delay(1);
+  }
+  if (!CO2_serial.available()) return -1;
+  // Continue reading until no new input available for 2ms
+  // (in case serial data still arriving).
+  // Double while loops here are not redundant...
+  while (CO2_serial.available()) {
+    while (CO2_serial.available()) {
+      if (n < BUFF_LEN-1) {
+        buff[n] = CO2_serial.read();
+        n++;
+      }
+    }
+    delay(2);
+  }
+  buff[n] = '\0';
+
+  // Parse response
+  // Starts with space (possibly), then single-character command,
+  // then a space, then the (first) integer number.
+  if (n < 3) return -1;
+  // Standard Arduino routines do not include means to check
+  // for invalid input, so we use following instead.
+  //const char *buff = s.c_str();
+  char *end;
+  long l = strtol(buff,&end,10);
+  if (end == buff) return -1;
+  return (int)l;
+}
+
+
+/* Returns the (first) integer value provided by the CozIR CO2 sensor after
+   sending the given command.  Returns -1 if something failed. */
+int cozirGetValue(char c, int v) {
+  return cozirGetValue(cozirCommandString(c,v));
 }
 
 
@@ -699,7 +867,11 @@ void testPMSensor(unsigned int cycles, unsigned long sampleInterval,
   Serial.println(sbuffer);
 
   for (unsigned int k = 0; k < cycles; k++) {
-    delay(sampleInterval);
+    //delay(sampleInterval);
+    // Break out of the testing loop if the user sends anything
+    // over the serial interface.
+    if (getSerialChar(sampleInterval) != (char)(-1)) break;
+    
     unsigned long t = millis() - t0;
     if (!probePM()) {
       sprintf(sbuffer," %8ld  %73s",

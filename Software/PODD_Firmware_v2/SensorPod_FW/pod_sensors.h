@@ -52,6 +52,20 @@ double getSound();
 int getCO2();
 float getCO();
 
+// CO2 sensor
+void initCO2();
+int getCO2();
+void setCO2(int ppm);
+bool probeCO2();
+void enableCO2Serial();
+void disableCO2Serial();
+String cozirCommandString(char c, int v);
+void cozirSendCommand(String s);
+void cozirSendCommand(char c, int v=-1);
+int cozirGetValue(String c);
+int cozirGetValue(char c, int v=-1);
+
+
 // Uncomment to enable code for corresponding particulate matter sensor.
 // If none are defined, dummy code will be provided.
 //#define USE_OLD_PM
