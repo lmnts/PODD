@@ -1123,6 +1123,7 @@ float serialFloatPrompt(String prompt, bool reprompt, float default0) {
 
 // Interactive menus ---------------------------------------------------
 
+//----------------------------------------------
 /* For up to the given amount of time [ms], will provide (over the 
    serial interface) regular prompts to press a key, in which case,
    a menu-based interactive mode will be started.  Otherwise, the
@@ -1152,6 +1153,7 @@ void interactivePrompt(unsigned long timeout) {
 }
 
 
+//----------------------------------------------
 /* Main menu for interactive mode.  Will continue to be shown until
    an appropriate selection is made. */
 void mainMenu() {
@@ -1263,6 +1265,7 @@ void mainMenu() {
         break;
       case 'I':
       case 'i':
+        Serial.println(F("  Firmware version:    " CONFIG_VERSION));
         printCompilationInfo("  ","");
         Serial.println();
         break;
@@ -1294,6 +1297,7 @@ void mainMenu() {
 }
 
 
+//----------------------------------------------
 /* Prints to serial various project settings.
    Intended to be used just below menu's project settings entry. */
 void showMenuProjectSettings() {
@@ -1306,6 +1310,7 @@ void showMenuProjectSettings() {
 }
 
 
+//----------------------------------------------
 /* Prints to serial various node settings.
    Intended to be used just below menu's node settings entry. */
 void showMenuNodeSettings() {
@@ -1321,6 +1326,7 @@ void showMenuNodeSettings() {
 }
 
 
+//----------------------------------------------
 /* Prints to serial a single sensor timing setting.
    Intended to be used just below menu's sensor timing settings entry. */
 void showMenuSensorTimingEntry(String s, int v) {
@@ -1339,6 +1345,7 @@ void showMenuSensorTimingEntry(String s, int v) {
 }
 
 
+//----------------------------------------------
 /* Prints to serial various sensor timing settings.
    Intended to be used just below menu's sensor timing settings entry. */
 void showMenuSensorTimingSettings() {
@@ -1353,6 +1360,7 @@ void showMenuSensorTimingSettings() {
 }
 
 
+//----------------------------------------------
 /* Prints to serial various clock settings.
    Intended to be used just below menu's clock settings entry. */
 void showMenuClockSettings() {
@@ -1363,8 +1371,16 @@ void showMenuClockSettings() {
 }
 
 
+//----------------------------------------------
+/* Sensor setup/config/testing menu.  Will continue to be shown until
+   an appropriate selection is made. */
+void sensorMenu() {
+}
+
+
 // Interactive configuration -------------------------------------------
 
+//----------------------------------------------
 /* Prompt the user to update project settings over the serial interface. */
 void configureProjectSettings() {
   String s;
@@ -1409,6 +1425,7 @@ void configureProjectSettings() {
 }
 
 
+//----------------------------------------------
 /* Prompt the user to update node settings over the serial interface. */
 void configureNodeSettings() {
   bool b;
@@ -1466,7 +1483,6 @@ void configureSensorTimingSettings() {
   
   Serial.println();
 }
-
 
 
 //----------------------------------------------------------------------

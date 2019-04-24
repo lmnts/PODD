@@ -43,14 +43,37 @@
 void sensorSetup();
 bool verifySensors();
 
+// ADC routines
+void initADC();
+void startADCFreeRunning();
+void stopADCFreeRunning();
+bool isADCFreeRunning();
+int readAnalog(uint8_t pin);
+int readAnalogFast();
+
 // get readings
 float getRHTemp();
 float getRHHum();
-float getLight();
+//float getLight();
 double getGlobeTemp();
-double getSound();
+//double getSound();
 int getCO2();
 float getCO();
+
+// Ambient light sensor
+void initLight();
+float getLight();
+bool probeLight();
+
+// Sound sensor
+void initSound();
+float getSound();
+void startSoundSampling();
+void stopSoundSampling();
+bool isSoundSampling();
+void sampleSoundISR();
+void resetSoundData();
+void testSoundSensor(unsigned int cycles, unsigned long sampleTime = 1000);
 
 // CO2 sensor
 void initCO2();

@@ -9,24 +9,64 @@
 */
 
 #include "pod_sensors.h"
+#include "pod_config.h"
+
+#include <limits.h>
 
 #include <NeoSWSerial.h>
 //#include <SoftwareSerial.h>
 #include <AsyncDelay.h>
 #include <ClosedCube_OPT3001.h>
-#include "cozir.h"
+//#include "cozir.h"
 #include <Wire.h>
 #include <HIH61xx.h>
-#include <TimerOne.h>
+//#include <TimerOne.h>
+#include <TimerThree.h>
 
 #ifdef USE_SPS30_PM
 #include <sps30.h>
 #endif
 
 
+// ADC / analog measurements
+// Analog pin to continuously sample
+#define FREE_RUNNING_PIN MIC_PIN
+// ...converted to value used in data registers
+#define FR_PIN (FREE_RUNNING_PIN - PIN_F0)
+// ADC clock prescaling here specific to 8 MHz.
+// See 'wiring_private.h' in teensy core files for other speeds.
+#ifndef ADC_PRESCALER
+#if defined(F_CPU) && (F_CPU != 8000000)
+#error "CPU speed must be set to 8 MHz"
+#endif
+#define ADC_PRESCALER 0x06
+#endif
+// Various ADC-related data register values:
+//   Set analog reference and pin to measure
+#define FR_ADMUX (w_analog_reference | (FR_PIN & 0x1F))
+//   Set trigger to free-running mode
+//   Can also enabled higher speed (but higher power) conversion mode
+#define FR_ADCSRB (0x00)
+//#define FR_ADCSRB (0x00 | (1 << ADHSM))
+//   Enable ADC and set clock prescaling,
+//   but do not enable free-running mode
+#define DEF_ADCSRA  ((1 << ADEN) | ADC_PRESCALER)
+//   Enable ADC, set clock prescaling,
+//   set auto-trigger and start ADC conversions
+#define FR_ADCSRA ((1 << ADEN) | (1 << ADSC) |(1 << ADATE) | ADC_PRESCALER)
+// Flag to indicate if ADC is currently in free-running mode
+volatile bool adcFreeRunning = false;
+
 // SOUND
-unsigned int knock;
-#define sampletime_DB 5000
+//unsigned int knock;
+//#define sampletime_DB 5000
+// Interval between sound samples in microseconds.
+// Sampling occurs through ISR, but rate should be limited to
+// only what is necessary as this will impact other ISRs.
+#define SOUND_SAMPLE_INTERVAL_US 10000
+// Flag to indicate if sound is currently being sampled
+volatile bool soundSampling = false;
+
 
 // Light
 #define OPT3001_ADDR 0x45
@@ -168,7 +208,15 @@ HIH61xx<TwoWire> hih(Wire);
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
 
 void sensorSetup() {
+  // ADC initialization:
+  // Using low-level ADC access rather than higher-level
+  // Arduino analog routines for speed.  That means
+  // readAnalog() must be used instead of analogRead()!
+  //analogReference(EXTERNAL);
+  initADC();
+  
   // OPT3001 ambient light sensor
+  /*
   opt3001.begin(OPT3001_ADDR);
   OPT3001_Config opt3001Config;
   opt3001Config.RangeNumber = B1100;
@@ -181,16 +229,8 @@ void sensorSetup() {
     Serial.print(F("OPT3001 configuration error: "));
     Serial.println(opt3001Err);
   }
-
-  // PM Sensor
-  // Initially turn off power to sensor.
-  // Initialization or other PM routines should enable power
-  // when necessary.
-  pinMode(PM_ENABLE, OUTPUT);
-  digitalWrite(PM_ENABLE, LOW);
-  initPM();
-
-  analogReference(EXTERNAL);
+  */
+  initLight();
 
   hih.initialise();
 
@@ -211,6 +251,11 @@ void sensorSetup() {
   //CO2_serial.end();
   */
   initCO2();
+  
+  // PM Sensor
+  // Power to sensor initially turned off: must call
+  // appropriate routines to power up and start PM sensor.
+  initPM();
 }
 
 bool verifySensors() {
@@ -277,6 +322,7 @@ bool verifySensors() {
   return true;
 }
 
+
 void calibrateCO2() {
   // see documentation for usage
   // requires external sources of known concentration CO2 gas
@@ -295,6 +341,147 @@ void calibrateCO2() {
   //czr.SetDigiFilter(32);
 }
 
+
+// ADC / Analog Measurements -------------------------------------------
+
+/* To allow for rapid ADC measurements of the microphone without
+   frequent CPU tie-ups (a standard ADC conversion takes ~ 0.1 ms,
+   too long for an ISR) that might interfere with network/xbee
+   communications, low-level ADC calls are used in place of the
+   high-level Arduino routines.  This allows the ADC to be placed
+   in free-running (continuously measuring) mode, though we must
+   temporarily suspend that mode to take analog measurements on
+   other (non-microphone) pins. */
+
+// See pins_teensy.c for use of low-level ADC access on
+// AT90USB1286 microcontroller.
+
+/* Initializes ADC. */
+void initADC() {
+  // PODD has an external voltage reference (3.3V power line)
+  analogReference(EXTERNAL);
+  // Turn on ADC
+  ADCSRA |= (1 << ADEN);
+}
+
+
+/* Places the ADC in free-running mode, taking continuous measurements
+   of a specific analog pin (intended for microphone pin). */
+void startADCFreeRunning() {
+  if (adcFreeRunning) return;
+
+  // Disable interrupts to prevent ISRs from changing values.
+  // Store previous interrupt state so we can restore it afterwards.
+  uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+  cli();  // Disable interrupts
+
+  // Disable digital input on pin
+  DIDR0 |= (1 << FR_PIN);  // achieved with pinMode()?
+
+  // Set ADC-related data registers:
+  // * set analog reference and pin to measure
+  //ADMUX = w_analog_reference | (FR_PIN & 0x1F);
+  ADMUX = FR_ADMUX;
+  // * set trigger to free-running mode
+  //   can also enabled higher speed (but higher power) conversion mode
+  //ADCSRB = 0x00;  // | (1 << ADHSM)
+  ADCSRB = FR_ADCSRB;
+  // * enable ADC and set clock prescaling
+  //ADCSRA = (1 << ADEN) | ADC_PRESCALER;
+  // * set auto-trigger and start ADC conversions
+  //ADCSRA |= (1 << ADSC) | (1 << ADATE);
+  // * enable ADC, set auto-trigger, set clock prescaling,
+  //   and start ADC conversions
+  ADCSRA = FR_ADCSRA;
+  
+  adcFreeRunning = true;
+  
+  // Restore interrupt status.
+  // Re-enables interrupts if they were previously active.
+  SREG = oldSREG;
+
+  // Give chance for ADC to settle
+  //delay(1);
+}
+
+
+/* Indicates if the ADC is currently in free-running (continuously
+   sampling) mode. */
+bool isADCFreeRunning() {
+  return adcFreeRunning;
+}
+
+
+/* Stops the ADC from continously taking measurements. */
+void stopADCFreeRunning() {
+  if (!adcFreeRunning) return;
+  adcFreeRunning = false;
+  
+  // Disable interrupts to prevent ISRs from changing values.
+  // Store previous interrupt state so we can restore it afterwards.
+  uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+  cli();  // Disable interrupts
+  
+  // Enable ADC and set clock prescaling,
+  // but omit auto-trigger flag
+  //ADCSRA = (1 << ADEN) | ADC_PRESCALER;
+  ADCSRA = DEF_ADCSRA;
+
+  // Restore interrupt status.
+  // Re-enables interrupts if they were previously active.
+  SREG = oldSREG;
+}
+
+
+/* Takes an analog measurement of the given pin.  If the ADC is in
+   free-running mode, it will stop, read the new pin, and then resume
+   free-running on the original pin. */
+int readAnalog(uint8_t pin) {
+  bool wasrunning = adcFreeRunning;
+  if (adcFreeRunning) stopADCFreeRunning();
+  // analogRead will wait for ADC conversion
+  int v = analogRead(pin);
+  if (wasrunning) startADCFreeRunning();
+  return v;
+}
+
+
+/* Returns the most recent ADC measurement in free-running mode.
+   If not in free-running mode or a new measurement is not
+   available since the last read, returns -1.  Measurements are
+   restricted to the fixed free-running pin (intended to be the
+   microphone pin).  This routine should be safe to call from
+   an ISR. */
+int readAnalogFast() {
+  if (!adcFreeRunning) return -1;
+  // Check if data registers are correct. If not, reset data registers.
+  // This may occur if someone calls analogRead() instead of
+  // readAnalog().
+  const uint8_t ADCSRA_MASK = (1 << ADEN) | (1 << ADATE) | 0x08;
+  if ((ADMUX != FR_ADMUX) || ((ADCSRA & ADCSRA_MASK) != (FR_ADCSRA  & ADCSRA_MASK))) {
+    adcFreeRunning = false;  // otherwise next line will do nothing
+    startADCFreeRunning();
+    return -1;
+  }
+  // We assume there is at most one ISR calling this routine,
+  // in which case we do not need to disable interrupts.
+  // Check if in middle of conversion (always true for free-running?).
+  //if (ADCSRA & (1 << ADSC)) return -1;
+  // Check if interrupt (conversion complete) flag set.
+  // If not set, there is no _new_ analog data to read.
+  if (!(ADCSRA & (1 << ADIF))) return -1;
+  // Read of low field locks results until high field read.
+  // Read of high field will clear data available flag?
+  uint8_t low = ADCL;
+  int v = (ADCH << 8) | low;
+  // Clear interrupt flag
+  ADCSRA |= (1 << ADIF);
+  return v;
+}
+
+
+// Sensor Values -------------------------------------------------------
+
 /* TODO: Potential for optimization of HIH Temp+RH sensor here.
    A single hih.read() updates both values and a timer can be
    used to signal when to collect the reading after initiating
@@ -310,6 +497,7 @@ float getRHHum() {
   return hih.getRelHumidity() / 100.0; // hih gives RH[%] x 100
 }
 
+/*
 float getLight() {
   // OPT3001: Range is 0.01 - 80,000 lux with resolution as
   // small as 0.01 lux.  Note with current configuration, it
@@ -326,6 +514,7 @@ float getLight() {
   }
   return reading.lux;
 }
+*/
 
 double getGlobeTemp() {
   float tempV = analogRead(TempGpin);
@@ -342,6 +531,7 @@ double getGlobeTemp() {
   return T;
 }
 
+/*
 double getSound() {
   unsigned int peakToPeak = 0;   // peak-to-peak level
   unsigned int signalMax = 0;
@@ -363,6 +553,7 @@ double getSound() {
   double SoundAmp = map(peakToPeak, 0, 1023, 300, 1000);
   return SoundAmp;
 }
+*/
 
 /*
 int getCO2() {
@@ -384,6 +575,297 @@ int getCO2() {
 
 float getCO() {
   return analogRead(CoSpecSensor); // TODO: Conversion!
+}
+
+
+// Light Sensor [OPT3001] ----------------------------------------------
+
+/* Initializes the OPT3001 ambient light sensor. */
+void initLight() {
+  opt3001.begin(OPT3001_ADDR);
+  OPT3001_Config opt3001Config;
+  opt3001Config.RangeNumber = B1100;
+  opt3001Config.ConvertionTime = B1;  // [sic]
+  opt3001Config.ModeOfConversionOperation = B11;
+  OPT3001_ErrorCode opt3001Err = opt3001.writeConfig(opt3001Config);
+  (void)opt3001Err;  // suppress unused variable warning
+  //if (opt3001Err == NO_ERROR) {
+  //  Serial.println(F("OPT3001 configured."));
+  //} else {
+  //  Serial.print(F("OPT3001 configuration error: "));
+  //  Serial.println(opt3001Err);
+  //}
+}
+
+
+/* Gets the ambient light level in lux.  Returns -1 if there
+   is a problem reading the sensor. */
+float getLight() {
+  // OPT3001: Range is 0.01 - 80,000 lux with resolution as
+  // small as 0.01 lux.  Note with current configuration, it
+  // may take several seconds for readings to stabilize if
+  // the lighting condition changes drastically and rapidly.
+  // That is, don't use this at a rave.
+  OPT3001 reading = opt3001.readResult();
+  // Return unphysical value if sensor read error
+  if (reading.error != NO_ERROR) {
+    //Serial.print(F("Error reading OPT3001 sensor ("));
+    //Serial.print(reading.error);
+    //Serial.println(F(")."));
+    return -1.0;
+  }
+  return reading.lux;
+}
+
+
+/* Tests communication with the ambient light sensor. */
+bool probeLight() {
+  // Check by trying to get a measurement value
+  OPT3001 reading = opt3001.readResult();
+  return (reading.error == NO_ERROR);
+}
+
+
+// Sound Sensor --------------------------------------------------------
+
+// Routines below are for analog readings of a simple microphone.
+// The one used in the PODDs is the SparkFun 12758: an electret
+// microphone with a x60 amplifier.
+
+// Sound levels are based upon the standard deviation of many samples
+// of microphone output.  Conversion to dB(Z) (no frequency weighting)
+// is for this particular microphone and setup.
+
+
+/* Sound data structure. */
+struct SoundData {
+  unsigned long tstart;
+  uint32_t N;
+  int32_t sum;
+  uint64_t sum2;  // 32-bit can overflow with many samples
+  //int32_t sum2;  // 32-bit can overflow with many samples
+  int min0,max0;
+  void reset() {tstart=millis(); N=0; sum=0; sum2=0; min0=INT_MAX; max0=INT_MIN;}
+  void add(int v) {
+    // quick, integer-type operations only: may be called from ISR
+    N++; sum+=v; int32_t v0=v; sum2+=(v0*v0);  // v^2 can overflow int
+    if(v<min0) min0=v; if(v>max0) max0=v;
+  }
+  float ave() const {return (N > 0) ? ((float)sum)/N : 0;}
+  float rms2() const {return (N > 0) ? ((float)sum2)/N : 0;}
+  float rms() const {return (N > 0) ? sqrt(rms2()) : 0;}
+  float sd() const {
+    if (N == 0) return 0;
+    float a=ave(); float a2=a*a; float r2 = rms2();
+    return (r2 > a2) ? sqrt(r2-a2) : 0;
+  }
+  // min/max are macros (cannot use as member name...)
+  float smin() const {return min0;}
+  float smax() const {return max0;}
+};
+// Problems with functions in volatile struct...
+//volatile SoundData soundData;
+SoundData soundData;
+
+
+/* Initializes the sound sensor (microphone) and associated data
+   structures. */
+void initSound() {
+  pinMode(MIC_PIN,INPUT);
+  //soundSampling = false;
+  stopSoundSampling();
+  //resetSoundData();
+  soundData.reset();
+}
+
+
+/* Gets the average-fluctuation-based sound level since the last call 
+   to this routine (or since sampling started).  Returns -1 if not
+   currently sampling or no samples have been taken since last call. */
+float getSound() {
+  if (!soundSampling) return -1;
+  
+  // Copy sound data into local variable to avoid ISR modifying
+  // working copy.  Reset global structure to start a new
+  // sampling period.  Temporarily disable interrupts to
+  // prevent ISRs from modifying data structure while we make
+  // the copy.
+  uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+  cli();  // Disable interrupts
+  SoundData sd = soundData;
+  soundData.reset();
+  SREG = oldSREG;
+
+  // Return invalid value if no samples were taken
+  if (sd.N == 0) return -1;
+
+  // Standard deviation of ADC samples (no dB(Z) conversion).
+  // Use of s.d. limits clipping-issues and provides for a better
+  // time-average metric than max-min does.
+  return sd.sd();
+
+  // TODO: conversion to decibels (Z-weighted -> dBz)
+}
+
+
+/* Starts sampling sound in the background.
+   Enables a timer-based ISR that continuously samples the microphone
+   level and accumulates data until the sound level is read.
+   Note this adds to the CPU workload and may interfere with other ISRs,
+   though we strive for this ISR to be fast enough not to cause an issue. */
+void startSoundSampling() {
+  if (soundSampling) return;
+  
+  soundData.reset();
+  
+  // Put ADC in continuously-sampling mode
+  startADCFreeRunning();
+  
+  // Begin timer and attach interrupt service routine (required order?)
+  Timer3.initialize(SOUND_SAMPLE_INTERVAL_US);
+  Timer3.attachInterrupt(sampleSoundISR);
+  
+  // Disable interrupts to prevent ISRs from changing values.
+  // Store previous interrupt state so we can restore it afterwards.
+  uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+  cli();  // Disable interrupts
+  soundSampling = true;
+  SREG = oldSREG;
+  
+}
+
+
+/* Stops sampling sound. */
+void stopSoundSampling() {
+  if (!soundSampling) return;
+
+  // Stop timer, remove ISR
+  Timer3.stop();
+  Timer3.detachInterrupt();
+  
+  // Disable interrupts to prevent ISRs from changing values.
+  // Store previous interrupt state so we can restore it afterwards.
+  uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+  cli();  // Disable interrupts
+  soundSampling = false;
+  SREG = oldSREG;
+  
+  // Halt ADC's continuously-sampling mode
+  stopADCFreeRunning();
+  
+}
+
+
+/* Indicates if sound sampling is currently occurring in the background. */
+bool isSoundSampling() {
+  return soundSampling;
+}
+
+
+/* Takes a sound sample.  Intended to be run as a timer-based ISR. */
+void sampleSoundISR() {
+  if (!soundSampling) return;
+  // Take most recent measurement from continuously-sampling ADC.
+  // Will return -1 if no new measurement available or if ADC not
+  // in continuously-sampling mode.
+  int v = readAnalogFast();
+  if (v < 0) return;
+  soundData.add(v);
+}
+
+
+/* Resets accumulated sound data for a new round of sound sampling.
+   ISR-safe. */
+void resetSoundData() {
+  // Disable interrupts to prevent ISRs from changing values.
+  // Store previous interrupt state so we can restore it afterwards.
+  uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+  cli();  // Disable interrupts
+  soundData.reset();
+  SREG = oldSREG;
+}
+
+
+/* Sound level testing routine.
+   Will sample the sensor for the given number of sample periods.
+   Sample period in milliseconds. */
+void testSoundSensor(unsigned int cycles, unsigned long sampleInterval) {
+  bool wasSampling = isSoundSampling();
+  Serial.println();
+  Serial.println(F("Sound level testing"));
+  Serial.println(F("-------------------"));
+  Serial.println();
+  if (!wasSampling) {
+    Serial.println(F("Initializing sound sensor...."));
+    initADC();
+    initSound();
+    Serial.println(F("Starting sound sampling...."));
+    startSoundSampling();
+  } else {
+    // Start a new set of samples
+    Serial.println(F("Starting sound sampling...."));
+    resetSoundData();
+  }
+  unsigned long t0 = millis();
+  
+  // Arduino implementation of printf drops %f support to reduce
+  // memory usage.  We use dsostrf instead.
+  char hbuffer1[128],hbuffer2[128];
+  char sbuffer[128];
+  char fbuffers[3][16];
+
+  // Table header
+  //Serial.println();
+  sprintf(hbuffer1," %9s %8s %6s %8s %8s %8s %6s %6s %6s",
+          " time[ms]","interval",
+          "     N"," average","   rms  ","   sd   ","   min","   max","  diff");
+  //Serial.println(hbuffer1);
+  sprintf(hbuffer2," %9s %8s %6s %8s %8s %8s %6s %6s %6s",
+          " --------","--------",
+          " -----"," -------"," -------"," -------","   ---","   ---","  ----");
+  //Serial.println(hbuffer2);
+
+  for (unsigned int k = 0; k < cycles; k++) {
+    //delay(sampleInterval);
+    // Break out of the testing loop if the user sends anything
+    // over the serial interface.
+    if (getSerialChar(sampleInterval) != (char)(-1)) break;
+
+    // Repeat header every so often
+    if (k % 50 == 0) {
+      Serial.println();
+      Serial.println(hbuffer1);
+      Serial.println(hbuffer2);
+    }
+
+    // Copy sound data into local variable to avoid ISR modifying
+    // working copy.  Reset global structure to start a new
+    // sampling period.  Temporarily disable interrupts to
+    // prevent ISRs from modifying data structure while we make
+    // the copy.
+    uint8_t oldSREG = SREG;  // Save interrupt status (among other things)
+    cli();  // Disable interrupts
+    SoundData sd = soundData;
+    soundData.reset();
+    SREG = oldSREG;
+
+    unsigned long t = millis() - t0;
+    unsigned long dt = millis() - sd.tstart;
+    dtostrf(sd.ave(),8,3,fbuffers[0]);
+    dtostrf(sd.rms(),8,3,fbuffers[1]);
+    dtostrf(sd.sd(),8,3,fbuffers[2]);
+    sprintf(sbuffer," %9ld %8ld %6ld %8s %8s %8s %6d %6d %6d",
+            t,dt,sd.N,fbuffers[0],fbuffers[1],fbuffers[2],sd.min0,sd.max0,sd.max0-sd.min0);
+    Serial.println(sbuffer);
+  }
+  
+  Serial.println();
+  if (!wasSampling) {
+    Serial.println(F("Stopping sound sampling...."));
+    stopSoundSampling();
+  }
+  Serial.println(F("Sound sensor testing is complete."));
+  Serial.println();
 }
 
 
@@ -626,7 +1108,7 @@ float getPM10() {
 void initPM() {
   //pinMode(PM_PIN_P1,INPUT);
   //pinMode(PM_PIN_P2,INPUT);
-  //pinMode(PM_ENABLE,OUTPUT);
+  pinMode(PM_ENABLE,OUTPUT);
   // NOTE: PODD PCB only allows signals from PM to teensy and not
   //   in the reverse direction, so serial will not work through
   //   the board's PM lines.
@@ -941,7 +1423,7 @@ void initPM() {
 void startPM() {
   digitalWrite(PM_ENABLE,HIGH);
   sleep(100);
-  sps30.begin(SOFTWARE_SERIAL);
+xx  sps30.begin(SOFTWARE_SERIAL);
 }
 
 

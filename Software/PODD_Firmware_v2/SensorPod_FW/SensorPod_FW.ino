@@ -64,6 +64,9 @@ void setup() {
   testPMSensor(-1,5000,5000,5000);
   //testPMSensor(-1,500,1,1);
   #endif
+
+  // Sound sensor testing
+  //testSoundSensor(-1,1000);
   
   Serial.println(LINE);
   Serial.println(F("Starting setup...."));
