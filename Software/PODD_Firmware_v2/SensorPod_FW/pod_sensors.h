@@ -61,12 +61,12 @@ int getCO2();
 float getCO();
 
 // Ambient light sensor
-void initLight();
+void initLightSensor();
 float getLight();
-bool probeLight();
+bool probeLightSensor();
 
 // Sound sensor
-void initSound();
+void initSoundSensor();
 float getSound();
 void startSoundSampling();
 void stopSoundSampling();
@@ -75,11 +75,24 @@ void sampleSoundISR();
 void resetSoundData();
 void testSoundSensor(unsigned int cycles, unsigned long sampleTime = 1000);
 
+// Temperature/humidity sensor
+void initTemperatureSensor();
+bool retrieveTemperatureData();
+float getTemperature();
+float getRelHumidity();
+bool probeTemperatureSensor();
+void testTemperatureSensor(unsigned int cycles, unsigned long sampleTime = 1000);
+
+// Globe/radiant temperature sensor
+void initGlobeTemperatureSensor();
+float getGlobeTemperature();
+bool probeGlobeTemperatureSensor();
+
 // CO2 sensor
-void initCO2();
+void initCO2Sensor();
 int getCO2();
 void setCO2(int ppm);
-bool probeCO2();
+bool probeCO2Sensor();
 void enableCO2Serial();
 void disableCO2Serial();
 String cozirCommandString(char c, int v);
@@ -100,15 +113,15 @@ float getPM2_5();
 float getPM10();
 // Sensirion SPS30 Particulate Matter Sensor routines
 #elif defined(USE_SPS30_PM)
-void initPM();
-void powerOnPM();
-void powerOffPM();
-bool isPMPowered();
-void startPM(bool wait=false);
-void stopPM();
-bool isPMRunning();
-bool probePM();
-bool cleanPM(bool wait=false);
+void initPMSensor();
+void powerOnPMSensor();
+void powerOffPMSensor();
+bool isPMSensorPowered();
+void startPMSensor(bool wait=false);
+void stopPMSensor();
+bool isPMSensorRunning();
+bool probePMSensor();
+bool cleanPMSensor(bool wait=false);
 void resetPMData();
 bool retrievePMData();
 inline void updatePM(){retrievePMData();}  // for compatibility

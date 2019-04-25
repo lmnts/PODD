@@ -276,13 +276,20 @@ void setRTCTime(unsigned long epoch) {
 // sensor logging functions
 
 void humidityLog() {
-  float AirTemp = getRHTemp();
-  float RH = getRHHum();
+  //float AirTemp = getRHTemp();
+  //float RH = getRHHum();
+  if (!retrieveTemperatureData()) {
+    Serial.println(F("Failed to retrieve temperature/humidity data."));
+    return;
+  }
+  float AirTemp = getTemperature();
+  float RH = getRelHumidity();
   Serial.print("Humidity: ");
   Serial.print(RH);
   Serial.println(" % ");
   Serial.print("Temperature: ");
-  Serial.print(AirTemp * 1.8 + 32);
+  //Serial.print(AirTemp * 1.8 + 32);
+  Serial.print(AirTemp);
   Serial.println(" F");
   String RHstr = "";
   String AirTempstr = "";
@@ -293,6 +300,10 @@ void humidityLog() {
 
 void lightLog() {
   float light = getLight();
+  if (isnan(light)) {
+    Serial.println(F("Failed to retrieve light data."));
+    return;
+  }
   Serial.print("light : ");
   Serial.print(light);
   Serial.println(" Lux");
@@ -302,7 +313,12 @@ void lightLog() {
 }
 
 void tempLog() {
-  double T = getGlobeTemp();
+  //double T = getGlobeTemp();
+  float T = getGlobeTemperature();
+  if (isnan(T)) {
+    Serial.println(F("Failed to retrieve globe temperature."));
+    return;
+  }
   Serial.print("TempG : ");
   Serial.print(T);
   Serial.println(" deg F");
@@ -341,13 +357,13 @@ void coLog() {
 
 void particleWarmup() {
   digitalWrite(PM_ENABLE, HIGH);
-  powerOnPM();
-  startPM();
+  powerOnPMSensor();
+  startPMSensor();
   // Sensor does not return data for ~ 5 seconds,
   // but takes 80-120 seconds for measurements to
   // settle down (initially very inaccurate).
   Alarm.timerOnce(120,particleLog);
-  Serial.println(F("Warming up particle meter."));
+  Serial.println(F("Warming up particulate matter sensor."));
 }
 
 void particleLog() {
@@ -367,7 +383,7 @@ void particleLog() {
 
   if(getRatePM() > 120 and ! getModeCoord())
     //digitalWrite(PM_ENABLE, LOW);
-    powerOffPM();
+    powerOffPMSensor();
 }
 
 //------------------------------------------------------------------------------

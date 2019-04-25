@@ -68,6 +68,10 @@ void setup() {
   // Sound sensor testing
   //testSoundSensor(-1,1000);
   
+  // Temperature/humidity sensor testing
+  //Wire.begin();
+  //testTemperatureSensor(-1,1000);
+  
   Serial.println(LINE);
   Serial.println(F("Starting setup...."));
   delay(2000);

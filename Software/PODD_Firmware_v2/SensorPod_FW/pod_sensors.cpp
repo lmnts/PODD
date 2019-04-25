@@ -15,11 +15,11 @@
 
 #include <NeoSWSerial.h>
 //#include <SoftwareSerial.h>
+#include <Wire.h>
 #include <AsyncDelay.h>
 #include <ClosedCube_OPT3001.h>
 //#include "cozir.h"
-#include <Wire.h>
-#include <HIH61xx.h>
+//#include <HIH61xx.h>
 //#include <TimerOne.h>
 #include <TimerThree.h>
 
@@ -57,7 +57,11 @@
 // Flag to indicate if ADC is currently in free-running mode
 volatile bool adcFreeRunning = false;
 
-// SOUND
+// Light [OPT3001]
+#define OPT3001_ADDR 0x45
+ClosedCube_OPT3001 opt3001;
+
+// Sound [SparkFun 12758]
 //unsigned int knock;
 //#define sampletime_DB 5000
 // Interval between sound samples in microseconds.
@@ -67,12 +71,16 @@ volatile bool adcFreeRunning = false;
 // Flag to indicate if sound is currently being sampled
 volatile bool soundSampling = false;
 
+// Temperature/humidity [HIH8120]
+// Address already hard-coded to this in HIH library
+#define HIH_ADDR 0x27
+// Library works for 8xxx line as well
+//HIH61xx<TwoWire> hih(Wire);
 
-// Light
-#define OPT3001_ADDR 0x45
-ClosedCube_OPT3001 opt3001;
+// Radiant temperature [PR222J2]
+#define RADIANT_TEMP_PIN A1
 
-// CO2
+// CO2 [CozIR-A]
 // Note Rx/Tx labeled for Teensy side of serial
 // (reverse of Rx/Tx label on CO2 sensor)
 #define CO2_PIN_RX PIN_B6
@@ -198,11 +206,7 @@ sps_values pmData;
 
 // Thermistor and light Pins
 #define TempGpin A1
-#define lightPin A2
-
-// HIH
-//#define HIH_ADDR 0x27  // Hard-coded to this in HIH library
-HIH61xx<TwoWire> hih(Wire);
+//#define lightPin A2
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
@@ -215,47 +219,25 @@ void sensorSetup() {
   //analogReference(EXTERNAL);
   initADC();
   
-  // OPT3001 ambient light sensor
-  /*
-  opt3001.begin(OPT3001_ADDR);
-  OPT3001_Config opt3001Config;
-  opt3001Config.RangeNumber = B1100;
-  opt3001Config.ConvertionTime = B1;  // [sic]
-  opt3001Config.ModeOfConversionOperation = B11;
-  OPT3001_ErrorCode opt3001Err = opt3001.writeConfig(opt3001Config);
-  if (opt3001Err == NO_ERROR) {
-    Serial.println(F("OPT3001 configured."));
-  } else {
-    Serial.print(F("OPT3001 configuration error: "));
-    Serial.println(opt3001Err);
-  }
-  */
-  initLight();
+  // Light sensor
+  initLightSensor();
 
-  hih.initialise();
+  // Sound sensor
+  initSoundSensor();
+  
+  // Temperature/humidity sensor
+  initTemperatureSensor();
 
+  // Globe/radiant temperature sensor
+  initGlobeTemperatureSensor();
+  
   // CO2 sensor
-  /*
-  // COZIR sensor communicates at 9600 baud
-  CO2_serial.begin(9600);
-  CO2_serial.listen();
-  czr.SetOperatingMode(CZR_POLLING);
-  // Suspend serial interface as this software serial can disrupt
-  // other serial interfaces (and we do not need it except when
-  // communicating with CO2 sensor).
-  // NeoSWSerial can toggle serial interface with just listen/ignore:
-  CO2_serial.ignore();
-  //Serial.println("DEBUGGING: Turning off software serial (CO2 interface).");
-  //CO2_serial.end();
-  // SoftwareSerial has no ignore and must be turned off...
-  //CO2_serial.end();
-  */
-  initCO2();
+  initCO2Sensor();
   
   // PM Sensor
   // Power to sensor initially turned off: must call
   // appropriate routines to power up and start PM sensor.
-  initPM();
+  initPMSensor();
 }
 
 bool verifySensors() {
@@ -265,13 +247,17 @@ bool verifySensors() {
   double tval_d;
   int tval_i;
 
-  tval_f = getRHTemp();
+  //tval_f = getRHTemp();
+  retrieveTemperatureData();
+  tval_f = getTemperature();
   if (tval_f < MIN_RH_TEMP || tval_f > MAX_RX_TEMP) {
     Serial.println(F("Humidity T Failure: ") + String(tval_f));
     return false;
   }
 
-  tval_f = getRHHum();
+  //tval_f = getRHHum();
+  retrieveTemperatureData();
+  tval_f = getRelHumidity();
   if (tval_f < MIN_RH_HUM || tval_f > MAX_RX_HUM) {
     Serial.println(F("Humidity RH Failure: ") + String(tval_f));
     return false;
@@ -282,10 +268,17 @@ bool verifySensors() {
     Serial.println(F("Light Failure: ") + String(tval_f));
     return false;
   }
-
+  
+  /*
   tval_d = getGlobeTemp();
   if (tval_d < MIN_GLOBE_TEMP || tval_d > MAX_GLOBE_TEMP) {
     Serial.println(F("Temp Failure: ") + String(tval_d));
+    return false;
+  }
+  */
+  tval_f = getGlobeTemperature();
+  if (tval_f < MIN_GLOBE_TEMP || tval_f > MAX_GLOBE_TEMP) {
+    Serial.println(F("Temp Failure: ") + String(tval_f));
     return false;
   }
 
@@ -320,25 +313,6 @@ bool verifySensors() {
   }
 
   return true;
-}
-
-
-void calibrateCO2() {
-  // see documentation for usage
-  // requires external sources of known concentration CO2 gas
-  // CO2 calibration
-  /*Here is a step by step
-    uncomment czr.SetOperatingMode(CZR_POLLING);
-    Upload Sketch
-    comment czr.SetOperatingMode(CZR_POLLING);
-    and uncomment czr.CalibrateFreshAir();
-    Upload Sketch
-    comment czr.CalibrateFreshAir();
-    Upload sketch*/
-  //czr.SetOperatingMode(CZR_POLLING);
-  //czr.SetOperatingMode(CZR_STREAMING);
-  //czr.CalibrateFreshAir();
-  //czr.SetDigiFilter(32);
 }
 
 
@@ -487,15 +461,19 @@ int readAnalogFast() {
    used to signal when to collect the reading after initiating
    the measurement, rather than just sitting here waiting. */
 
+/*
 float getRHTemp() {
   hih.read();  // Blocks for ~45ms as sensor is read
   return hih.getAmbientTemp() / 100.0; // hih gives temp x 100
 }
+*/
 
+/*
 float getRHHum() {
   hih.read();  // Blocks for ~45ms as sensor is read
   return hih.getRelHumidity() / 100.0; // hih gives RH[%] x 100
 }
+*/
 
 /*
 float getLight() {
@@ -516,20 +494,22 @@ float getLight() {
 }
 */
 
-double getGlobeTemp() {
+/*
+float getGlobeTemp() {
   float tempV = analogRead(TempGpin);
   int R = 10000; //actual resistor value
   double Rt, logRt, T;
   // Floats from U.S Sensor Corp. Curve J sheet
-  float A = 0.00147530413409933;
-  float B = 0.000236552076866679;
-  float C = 0.000000118857119853526;
-  float D = -0.000000000074635312369958;
+  const float A = 0.00147530413409933;
+  const float B = 0.000236552076866679;
+  const float C = 0.000000118857119853526;
+  const float D = -0.000000000074635312369958;
   Rt = R * (1024.0 / tempV - 1.0);
   logRt = log(Rt);
   T = ((1.0 / (A + (B * logRt) + (C * (logRt * logRt * logRt)) + (D * (logRt * logRt * logRt * logRt * logRt)))) - 273.15) * 1.8 + 32;
   return T;
 }
+*/
 
 /*
 double getSound() {
@@ -574,14 +554,15 @@ int getCO2() {
 */
 
 float getCO() {
-  return analogRead(CoSpecSensor); // TODO: Conversion!
+  //return analogRead(CoSpecSensor); // TODO: Conversion!
+  return readAnalog(CoSpecSensor); // TODO: Conversion!
 }
 
 
 // Light Sensor [OPT3001] ----------------------------------------------
 
 /* Initializes the OPT3001 ambient light sensor. */
-void initLight() {
+void initLightSensor() {
   opt3001.begin(OPT3001_ADDR);
   OPT3001_Config opt3001Config;
   opt3001Config.RangeNumber = B1100;
@@ -598,7 +579,7 @@ void initLight() {
 }
 
 
-/* Gets the ambient light level in lux.  Returns -1 if there
+/* Gets the ambient light level in lux.  Returns NAN if there
    is a problem reading the sensor. */
 float getLight() {
   // OPT3001: Range is 0.01 - 80,000 lux with resolution as
@@ -612,14 +593,14 @@ float getLight() {
     //Serial.print(F("Error reading OPT3001 sensor ("));
     //Serial.print(reading.error);
     //Serial.println(F(")."));
-    return -1.0;
+    return NAN;
   }
   return reading.lux;
 }
 
 
 /* Tests communication with the ambient light sensor. */
-bool probeLight() {
+bool probeLightSensor() {
   // Check by trying to get a measurement value
   OPT3001 reading = opt3001.readResult();
   return (reading.error == NO_ERROR);
@@ -670,7 +651,7 @@ SoundData soundData;
 
 /* Initializes the sound sensor (microphone) and associated data
    structures. */
-void initSound() {
+void initSoundSensor() {
   pinMode(MIC_PIN,INPUT);
   //soundSampling = false;
   stopSoundSampling();
@@ -798,7 +779,7 @@ void testSoundSensor(unsigned int cycles, unsigned long sampleInterval) {
   if (!wasSampling) {
     Serial.println(F("Initializing sound sensor...."));
     initADC();
-    initSound();
+    initSoundSensor();
     Serial.println(F("Starting sound sampling...."));
     startSoundSampling();
   } else {
@@ -869,6 +850,238 @@ void testSoundSensor(unsigned int cycles, unsigned long sampleInterval) {
 }
 
 
+// Temperature/Humidity Sensor [HIH8120] -------------------------------
+
+/* Temperature/humidity data structure.
+   Uses NAN when data is invalid. */
+struct TempRHData {
+  float _T;   // [C]
+  float _RH;  // [%]
+  void reset() {_T = NAN; _RH = NAN;}
+  float Tc() {return _T;}
+  float Tf() {return (isnan(_T)) ? NAN : 1.8*_T + 32;}
+  float RH() {return _RH;}
+};
+TempRHData temperatureData;
+
+
+/* Initializes the HIH8120 temperature/humidity sensor and associated
+   data structures. */
+void initTemperatureSensor() {
+  //hih.initialise();
+  temperatureData.reset();
+}
+
+
+/* Retrieves measurements from the temperature/humidity sensor.
+   Returns true on success.  Actual data values can be accessed
+   through below routines.  Takes ~40ms for sensor to perform
+   conversion and return data. */
+bool retrieveTemperatureData() {
+  temperatureData.reset();
+  // Sending an (empty) write command triggers a
+  // sensor measurement
+  Wire.beginTransmission(HIH_ADDR);
+  if (Wire.endTransmission(HIH_ADDR) != 0) return false;
+
+  // I2C data encoded in four bytes
+  // See Honeywell's technical note on I2C communications with HumidIcon
+  // sensors for a description.
+  const size_t BUFF_LEN = 4;
+  uint8_t buff[BUFF_LEN];
+  
+  // Typical measurement conversion time is ~ 37 ms.
+  // Will repeatedly poll for data until we get new results
+  // or we timeout (100 ms).
+  unsigned long t0 = millis();
+  delay(35);  // appears to be sufficient most of the time
+  while (true) {
+    size_t n = Wire.requestFrom(HIH_ADDR,BUFF_LEN);
+    // Communication failed
+    if (n != BUFF_LEN) return false;
+    // Pull data from I2C buffer
+    for (size_t k = 0; k < n; k++) buff[k] = Wire.read();
+    // Check if returned data contains the new measurement
+    // (two highest bits of first byte are zero)
+    if ((buff[0] >> 6) == 0) {
+      uint16_t rhraw = ((uint16_t)(buff[0] & 0x3F) << 8) | (uint16_t)buff[1];
+      uint16_t traw = ((uint16_t)buff[2] << 6) | ((uint16_t)buff[3] >> 2);
+      const float A = (1 / (float)16382);
+      temperatureData._RH = 100 * A * rhraw;
+      temperatureData._T  = 165 * A * traw - 40;
+      return true;
+    }
+    // Timed-out
+    if (millis() - t0 > 100) return false;
+    delay(10);
+  } 
+  // Should not reach here...
+  return false;
+}
+
+
+/* Returns the most recently retrieved temperature measurement in
+   Farenheit (measurements can be retrieved using
+   retrieveTemperatureData()).  Returns NAN if measurement
+   failed/invalid. */
+float getTemperature() {
+  return temperatureData.Tf();
+}
+
+
+/* Returns the most recently retrieved relative humidity measurement 
+   in percent (measurements can be retrieved using
+   retrieveTemperatureData()).  Returns NAN if measurement
+   failed/invalid. */
+float getRelHumidity() {
+  return temperatureData.RH();
+}
+
+
+/* Tests communication with the temperature/humidity sensor. */
+bool probeTemperatureSensor() {
+  // Test communication by requesting data from sensor.
+  // Note writing to sensor triggers a conversion and would
+  // tie up the sensor.
+  const size_t BUFF_LEN = 2;
+  //uint8_t buff[BUFF_LEN];
+  size_t n = Wire.requestFrom(HIH_ADDR,BUFF_LEN);
+  // Clear I2C buffer
+  while (Wire.available()) Wire.read();
+  // Communication successful if we received as many
+  // bytes as requested
+  return (n == BUFF_LEN);
+}
+
+/* Temperature/humidity testing routine.
+   Will sample the sensor for the given number cycles.
+   Sample period in milliseconds. */
+void testTemperatureSensor(unsigned int cycles, unsigned long sampleInterval) {
+  Serial.println();
+  Serial.println(F("Temperature/humidity testing"));
+  Serial.println(F("----------------------------"));
+  Serial.println();
+  Serial.println(F("Initializing temperature/humidity sensor...."));
+  initTemperatureSensor();
+  Serial.println(F("Starting temperature/humidity measurements...."));
+  unsigned long t0 = millis();
+  
+  // Arduino implementation of printf drops %f support to reduce
+  // memory usage.  We use dsostrf instead.
+  char hbuffer1[128],hbuffer2[128];
+  char sbuffer[128];
+  char fbuffers[2][16];
+
+  // Table header
+  //Serial.println();
+  sprintf(hbuffer1," %9s  %7s  %7s",
+          " time[ms]","  T[F] ","  RH[%]");
+  //Serial.println(hbuffer1);
+  sprintf(hbuffer2," %9s  %7s  %7s",
+          " --------"," ------"," ------");
+  //Serial.println(hbuffer2);
+
+  for (unsigned int k = 0; k < cycles; k++) {
+    //delay(sampleInterval);
+    // Break out of the testing loop if the user sends anything
+    // over the serial interface.
+    if (getSerialChar(sampleInterval) != (char)(-1)) break;
+
+    // Repeat header every so often
+    if (k % 50 == 0) {
+      Serial.println();
+      Serial.println(hbuffer1);
+      Serial.println(hbuffer2);
+    }
+
+    unsigned long t = millis() - t0;
+    if (retrieveTemperatureData()) {
+      float T = getTemperature();
+      dtostrf(T,7,2,fbuffers[0]);
+      float RH = getRelHumidity();
+      dtostrf(RH,7,2,fbuffers[1]);
+    } else {
+      strcpy(fbuffers[0],"   --- ");
+      strcpy(fbuffers[1],"   --- ");
+    }
+    sprintf(sbuffer," %9ld  %7s  %7s",
+            t,fbuffers[0],fbuffers[1]);
+    Serial.println(sbuffer);
+  }
+  
+  Serial.println();
+  Serial.println(F("Temperature/humidity sensor testing is complete."));
+  Serial.println();
+}
+
+
+
+// Radiant Temperature Sensor [PR222J2] --------------------------------
+
+// In order to measure radiant temperature, a temperature sensor is
+// placed inside a dark sphere.  The intent is for the air within the
+// sphere to equalize with the incident radiation on the sphere, but
+// in practice, there will be some heat transfer with the outside air,
+// more so if there is an air current.  The "globe" temperature is
+// thus going to be somewhere between the radiant temperature and
+// ambient air temperature, but should at least give an indication if
+// the two differ significantly.
+
+/* Initializes the temperature sensor placed inside a dark sphere;
+   intended for radiant temperature measurements. */
+void initGlobeTemperatureSensor() {
+  // nothing to do
+}
+
+
+/* Returns the current temperature within the sphere (globe) in 
+   Farenheit.  Returns NAN if the sensor cannot be read or the
+   data is invalid (e.g. missing sensor). */
+float getGlobeTemperature() {
+  // Voltage across R in GND-R-Rt-3.3V voltage divider.
+  // Voltage in units of analog resolution (units will cancel).
+  // Note use of readAnalog() instead of analogRead().
+  float V = readAnalog(RADIANT_TEMP_PIN);
+  // If V is very small, either the thermistor is not connected
+  // or we are at the South Pole on a cold day
+  if (V < 10) return NAN;
+  // Fixed resistor value
+  const int R = 10000; //actual resistor value
+  // Invert voltage divider to get thermistor's resistance
+  float Rt = R * (1024.0 / V - 1.0);
+
+  // Find temperature corresponding to above resistance
+  // Floats from U.S Sensor Corp. Curve J sheet
+  const float A = 0.00147530413409933;
+  const float B = 0.000236552076866679;
+  const float C = 0.000000118857119853526;
+  const float D = -0.000000000074635312369958;
+  float logRt = log(Rt);
+  float logRt2 = logRt * logRt;
+  // Inverse of temperature in Kelvin
+  float Tkinv = A + logRt * (B + logRt2 * (C + logRt2 * (D)));
+
+  // Return in Kelvin
+  //return 1/Tkinv;
+  // Return in Celcius
+  //return 1/Tkinv - 273.15;
+  // Return in Farenheit
+  return 1.8 * (1/Tkinv - 273.15) + 32;
+}
+
+
+/* Tests validity of the globe temperature sensor. */
+bool probeGlobeTemperatureSensor() {
+  // Make measurement of voltage across fixed resistor R in
+  // GND-R-Rt-3.3V voltage divider.  If voltage is nearly
+  // zero, the thermistor is likely not connected (effectively
+  // infinite resistance) and any readings are invalid.
+  // Note use of readAnalog() instead of analogRead().
+  return (readAnalog(RADIANT_TEMP_PIN) >= 10);
+}
+
+
+
 // CO2 Sensor [CozIR-A] ------------------------------------------------
 
 // Good reference for Arduino serial interface with CozIR CO2 sensor:
@@ -876,7 +1089,7 @@ void testSoundSensor(unsigned int cycles, unsigned long sampleInterval) {
 
 
 /* Initializes the CO2 sensor. */
-void initCO2() {
+void initCO2Sensor() {
   // COZIR sensor communicates at 9600 baud
   CO2_serial.begin(9600);
   // Only enable serial interface while using it
@@ -1036,12 +1249,34 @@ int cozirGetValue(char c, int v) {
 }
 
 
+// OLD
+/*
+void calibrateCO2() {
+  // see documentation for usage
+  // requires external sources of known concentration CO2 gas
+  // CO2 calibration
+  / * Here is a step by step
+    uncomment czr.SetOperatingMode(CZR_POLLING);
+    Upload Sketch
+    comment czr.SetOperatingMode(CZR_POLLING);
+    and uncomment czr.CalibrateFreshAir();
+    Upload Sketch
+    comment czr.CalibrateFreshAir();
+    Upload sketch * /
+  //czr.SetOperatingMode(CZR_POLLING);
+  //czr.SetOperatingMode(CZR_STREAMING);
+  //czr.CalibrateFreshAir();
+  //czr.SetDigiFilter(32);
+}
+*/
+
+
 // Particular Matter Sensor (OLD) --------------------------------------
 
 #ifdef USE_OLD_PM
 
 /* Initializes the particulate matter sensor, but does not power it up. */
-void initPM() {
+void initPMSensor() {
   pinMode(PM_PIN_2_5, INPUT);
   pinMode(PM_PIN_10, INPUT);
   pinMode(PM_ENABLE, OUTPUT);
@@ -1105,7 +1340,7 @@ float getPM10() {
 #ifdef USE_SPS30_PM
 
 /* Initializes the particulate matter sensor, but does not power it up. */
-void initPM() {
+void initPMSensor() {
   //pinMode(PM_PIN_P1,INPUT);
   //pinMode(PM_PIN_P2,INPUT);
   pinMode(PM_ENABLE,OUTPUT);
@@ -1122,10 +1357,10 @@ void initPM() {
    Does not start sampling; should draw lower power in this idle
    state (documentation says < 8 mA, but PODD PCB + SPS30 system
    draws closer to 20 mA). */
-void powerOnPM() {
+void powerOnPMSensor() {
   if (pmPowered) return;
   digitalWrite(PM_ENABLE, HIGH);
-  Serial.println(F("Powered on PM."));
+  Serial.println(F("Powered on PM sensor."));
   delay(100);
   //sps30.begin(SOFTWARE_SERIAL);
   /*
@@ -1137,29 +1372,29 @@ void powerOnPM() {
   */
   //sps30.begin(I2C_COMMS);
   if (sps30.begin(I2C_COMMS)) {
-    Serial.println(F("Successfully started PM I2C interface."));
+    Serial.println(F("Successfully started PM sensor I2C interface."));
   } else {
-    Serial.println(F("Could not start PM I2C interface."));
+    Serial.println(F("Could not start PM sensor I2C interface."));
   }
   pmPowered = true;
 }
 
 
 /* Power down the particulate matter sensor. */
-void powerOffPM() {
+void powerOffPMSensor() {
   if (!pmPowered) return;
   if (pmRunning) {
-    stopPM();
+    stopPMSensor();
   }
   delay(100);
   digitalWrite(PM_ENABLE, LOW);
-  Serial.println(F("Powered off PM."));
+  Serial.println(F("Powered off PM sensor."));
   pmPowered = false;
 }
 
 
 /* Indicates if the particulate matter sensor is currently powered on. */
-bool isPMPowered() {
+bool isPMSensorPowered() {
   return pmPowered;
 }
 
@@ -1175,14 +1410,14 @@ bool isPMPowered() {
 
    Argument indicates if routine should wait long enough for sensor
    to start up and begin taking measurements. */
-void startPM(bool wait) {
+void startPMSensor(bool wait) {
   if (pmRunning) return;
-  if (!pmPowered) powerOnPM();
+  if (!pmPowered) powerOnPMSensor();
   //if (!sps30.start()) return;
   if (sps30.start()) {
-    Serial.println(F("Successfully started PM."));
+    Serial.println(F("Successfully started PM sensor."));
   } else {
-    Serial.println(F("Could not start PM."));
+    Serial.println(F("Could not start PM sensor."));
     return;
   }
   if (wait) delay(8000);
@@ -1192,21 +1427,21 @@ void startPM(bool wait) {
 
 /* Stop the particulate matter sensor from taking measurements.
    Reduces power usage from ~ 60 mA to < 8 mA. */
-void stopPM() {
+void stopPMSensor() {
   if (!pmRunning) return;
   sps30.stop();
-  Serial.println(F("Stopped PM."));
+  Serial.println(F("Stopped PM sensor."));
 }
 
 
 /* Indicates if the particulate matter sensor is currently taking data. */
-bool isPMRunning() {
+bool isPMSensorRunning() {
   return pmRunning;
 }
 
 
 /* Tests communication with the particulate matter sensor. */
-bool probePM() {
+bool probePMSensor() {
   if (!pmPowered) return false;
   if (!pmRunning) return false;
   return sps30.probe();
@@ -1219,11 +1454,11 @@ bool probePM() {
 
    Argument indicates if routine should wait long enough for sensor
    cleaning to complete. */
-bool cleanPM(bool wait) {
+bool cleanPMSensor(bool wait) {
   if (!pmPowered) return false;
   if (!pmRunning) return false;
   if (!sps30.clean()) return false;
-  Serial.println(F("Cleaning PM.... (takes 12 seconds)"));
+  Serial.println(F("Cleaning PM sensor.... (takes 12 seconds)"));
   if (wait) delay(12000);  // Need 10s, or 10s + spinup/down?
   return true;
 }
@@ -1261,7 +1496,8 @@ bool retrievePMData() {
 }
 
 
-/* Returns the most recently retrieved PM_2.5 measurement in ug/m^3.
+/* Returns the most recently retrieved PM_2.5 measurement in ug/m^3
+   (measurements can be retrieved using retrievePMData()).
    PM_2.5 is a measurement of particulate matter 2.5 um in diameter
    or smaller.  Sensor's particle size threshold is ~ 0.3 um.
    Returns -1 if measurement failed/invalid. */
@@ -1270,7 +1506,8 @@ float getPM2_5() {
 }
 
 
-/* Returns the most recently retrieved PM_10 measurement in ug/m^3.
+/* Returns the most recently retrieved PM_10 measurement in ug/m^3
+   (measurements can be retrieved using retrievePMData()).
    PM_10 is a measurement of particulate matter 10 um in diameter
    or smaller.  Sensor's particle size threshold is ~ 0.3 um.
    Returns -1 if measurement failed/invalid. */
@@ -1307,14 +1544,14 @@ void testPMSensor(unsigned int cycles, unsigned long sampleInterval,
   Serial.println(F("---------------------------------------------------"));
   Serial.println();
   Serial.println(F("Initializing particulate matter sensor...."));
-  initPM();
+  initPMSensor();
   Serial.print(F("Waiting in unpowered state ("));
   Serial.print(offTime/1000);
   Serial.print(F("s)"));
   printPMPauseProgress(offTime/1000,1000);
   Serial.println();
   Serial.println(F("Powering up particulate matter sensor...."));
-  powerOnPM();
+  powerOnPMSensor();
   Serial.print(F("Waiting in idle mode ("));
   Serial.print(idleTime/1000);
   Serial.print(F("s)"));
@@ -1330,7 +1567,7 @@ void testPMSensor(unsigned int cycles, unsigned long sampleInterval,
   */
   
   Serial.println(F("Starting measurements...."));
-  startPM(false);
+  startPMSensor(false);
   unsigned long t0 = millis();
   
   // Arduino implementation of printf drops %f support to reduce
@@ -1360,7 +1597,7 @@ void testPMSensor(unsigned int cycles, unsigned long sampleInterval,
     if (getSerialChar(sampleInterval) != (char)(-1)) break;
     
     unsigned long t = millis() - t0;
-    if (!probePM()) {
+    if (!probePMSensor()) {
       sprintf(sbuffer," %8ld  %73s",
               t,"                       <failed to probe PM sensor>                       ");
       Serial.println(sbuffer);
@@ -1408,7 +1645,7 @@ void testPMSensor(unsigned int cycles, unsigned long sampleInterval,
 #ifdef USE_SMPWM01C_PM
 
 /* Initializes the particulate matter sensor, but does not power it up. */
-void initPM() {
+void initPMSensor() {
   pinMode(PM_PIN_P1,INPUT);
   pinMode(PM_PIN_P2,INPUT);
   pinMode(PM_ENABLE,OUTPUT);
@@ -1420,17 +1657,16 @@ void initPM() {
    This should be done at least 90 seconds before sampling is performed:
    the heater element that draws the bulk of the power generates an air
    current through the sensor that takes time to stabilize. */
-void startPM() {
+void startPMSensor() {
   digitalWrite(PM_ENABLE,HIGH);
   sleep(100);
-xx  sps30.begin(SOFTWARE_SERIAL);
 }
 
 
 /* Turn off power to the particulate matter sensor.
    If the sensor is currently sampling, any not-yet-processed data
    will be lost. */
-void stopPM() {
+void stopPMSensor() {
   if (pmSampling) stopPMSampling();
   digitalWrite(PM_ENABLE,LOW);
 }
