@@ -9,14 +9,6 @@ Those marked with (†) are not in the Arduino library repository and must be in
   <https://github.com/stevemarple/AsyncDelay>
 - **ClosedCube OPT3001:**
   <https://github.com/closedcube/ClosedCube_OPT3001_Arduino>
-- **Cozir CO2 Sensor (†):**
-  <https://github.com/roder/cozir>
-
-  The version included here has been modified from the original to improve read timing, address compiler warnings, allow for generic serial interfaces, and remove a Serial.begin() statement (the PODD firmware will control the serial interfaces).
-- **HIH61xx:**
-  <https://github.com/stevemarple/HIH61xx>
-  
-  This library is also valid for the 8XXX series of Honeywell HumidIcon humidity/temperature sensors.
 - **NeoSWSerial:**
   <https://github.com/SlashDevin/NeoSWSerial>
 - **SparkFun DS3234 RTC (†):**
@@ -33,4 +25,6 @@ Those marked with (†) are not in the Arduino library repository and must be in
   The version included here has been modified from the original to increase the maximum number of timers/alarms.
 - **TimerOne:**
   <https://github.com/PaulStoffregen/TimerOne>
+- **TimerThree:**
+  <https://github.com/PaulStoffregen/TimerThree>
 
