@@ -73,7 +73,7 @@ void stopSoundSampling();
 bool isSoundSampling();
 void sampleSoundISR();
 void resetSoundData();
-void testSoundSensor(unsigned int cycles, unsigned long sampleTime = 1000);
+void testSoundSensor(unsigned long cycles, unsigned long sampleTime = 1000);
 
 // Temperature/humidity sensor
 void initTemperatureSensor();
@@ -81,7 +81,7 @@ bool retrieveTemperatureData();
 float getTemperature();
 float getRelHumidity();
 bool probeTemperatureSensor();
-void testTemperatureSensor(unsigned int cycles, unsigned long sampleTime = 1000);
+void testTemperatureSensor(unsigned long cycles, unsigned long sampleTime = 1000);
 
 // Globe/radiant temperature sensor
 void initGlobeTemperatureSensor();
@@ -130,7 +130,7 @@ float getPM10();
 // Below only used for testing
 #ifdef PM_TESTING
 void printPMPauseProgress(unsigned int N, unsigned long pause = 1000);
-void testPMSensor(unsigned int cycles, unsigned long sampleTime = 3000,
+void testPMSensor(unsigned long cycles, unsigned long sampleTime = 3000,
                   unsigned long offTime = 10000, unsigned long idleTime = 10000);
 #endif
 // SM-PWM-01C Particulate Matter Sensor routines
@@ -149,7 +149,7 @@ float getPM10();
 // Below only used for testing
 #ifdef PM_TESTING
 void printPMPauseProgress(unsigned int N, unsigned long pause = 1000);
-void testPMSensor(unsigned int cycles, unsigned long sampleTime = 30000,
+void testPMSensor(unsigned long cycles, unsigned long sampleTime = 30000,
                   unsigned long warmupTime = 90000);
 #endif
 // Dummy particulate matter sensor routines

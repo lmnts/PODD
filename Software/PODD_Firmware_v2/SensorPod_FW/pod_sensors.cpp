@@ -661,10 +661,10 @@ void initSoundSensor() {
 
 
 /* Gets the average-fluctuation-based sound level since the last call 
-   to this routine (or since sampling started).  Returns -1 if not
+   to this routine (or since sampling started).  Returns NAN if not
    currently sampling or no samples have been taken since last call. */
 float getSound() {
-  if (!soundSampling) return -1;
+  if (!soundSampling) return NAN;
   
   // Copy sound data into local variable to avoid ISR modifying
   // working copy.  Reset global structure to start a new
@@ -678,7 +678,7 @@ float getSound() {
   SREG = oldSREG;
 
   // Return invalid value if no samples were taken
-  if (sd.N == 0) return -1;
+  if (sd.N == 0) return NAN;
 
   // Standard deviation of ADC samples (no dB(Z) conversion).
   // Use of s.d. limits clipping-issues and provides for a better
@@ -770,7 +770,7 @@ void resetSoundData() {
 /* Sound level testing routine.
    Will sample the sensor for the given number of sample periods.
    Sample period in milliseconds. */
-void testSoundSensor(unsigned int cycles, unsigned long sampleInterval) {
+void testSoundSensor(unsigned long cycles, unsigned long sampleInterval) {
   bool wasSampling = isSoundSampling();
   Serial.println();
   Serial.println(F("Sound level testing"));
@@ -956,7 +956,7 @@ bool probeTemperatureSensor() {
 /* Temperature/humidity testing routine.
    Will sample the sensor for the given number cycles.
    Sample period in milliseconds. */
-void testTemperatureSensor(unsigned int cycles, unsigned long sampleInterval) {
+void testTemperatureSensor(unsigned long cycles, unsigned long sampleInterval) {
   Serial.println();
   Serial.println(F("Temperature/humidity testing"));
   Serial.println(F("----------------------------"));
@@ -1537,7 +1537,7 @@ void printPMPauseProgress(unsigned int N, unsigned long pause) {
    milliseconds. */
 // Sensor testing >>>>>>>>>>>>>>>>>>>>>>
 #ifdef PM_TESTING
-void testPMSensor(unsigned int cycles, unsigned long sampleInterval,
+void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
                   unsigned long offTime, unsigned long idleTime) {
   Serial.println();
   Serial.println(F("Particulate Matter Sensor (Sensirion SPS30) testing"));
@@ -2069,7 +2069,7 @@ void printPMPauseProgress(unsigned int N, unsigned long pause) {
    milliseconds. */
 // Sensor testing >>>>>>>>>>>>>>>>>>>>>>
 #ifdef PM_TESTING
-void testPMSensor(unsigned int cycles, unsigned long sampleTime,
+void testPMSensor(unsigned long cycles, unsigned long sampleTime,
                   unsigned long warmupTime) {
   Serial.println();
   Serial.println(F("Particulate Matter Sensor (SM-PWM-01C) testing"));

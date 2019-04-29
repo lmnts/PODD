@@ -328,8 +328,12 @@ void tempLog() {
 }
 
 void soundLog() {
+  float sound_amp = getSound();
+  if (isnan(sound_amp)) {
+    Serial.println(F("Failed to retrieve sound level."));
+    return;
+  }
   Serial.print("Sound = ");
-  double sound_amp = getSound();
   Serial.print(sound_amp / 10);
   Serial.println(" dB");
   String Soundstr = "";
