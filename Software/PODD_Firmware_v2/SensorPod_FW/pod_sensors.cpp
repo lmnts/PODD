@@ -806,14 +806,17 @@ void testSoundSensor(unsigned long cycles, unsigned long sampleInterval) {
           " -----"," -------"," -------"," -------","   ---","   ---","  ----");
   //Serial.println(hbuffer2);
 
-  for (unsigned int k = 0; k < cycles; k++) {
+  // Repeat measurements cycles number of times.
+  // Logic here allows endless looping for cycles=-1 (maximum unsigned long).
+  for (unsigned long k = 1; k <= cycles; k++) {
     //delay(sampleInterval);
     // Break out of the testing loop if the user sends anything
     // over the serial interface.
     if (getSerialChar(sampleInterval) != (char)(-1)) break;
 
     // Repeat header every so often
-    if (k % 50 == 0) {
+    // Ensure write on first loop (k=1)
+    if (k % 50 == 1) {
       Serial.println();
       Serial.println(hbuffer1);
       Serial.println(hbuffer2);
@@ -981,14 +984,17 @@ void testTemperatureSensor(unsigned long cycles, unsigned long sampleInterval) {
           " --------"," ------"," ------");
   //Serial.println(hbuffer2);
 
-  for (unsigned int k = 0; k < cycles; k++) {
+  // Repeat measurements cycles number of times.
+  // Logic here allows endless looping for cycles=-1 (maximum unsigned long).
+  for (unsigned long k = 1; k <= cycles; k++) {
     //delay(sampleInterval);
     // Break out of the testing loop if the user sends anything
     // over the serial interface.
     if (getSerialChar(sampleInterval) != (char)(-1)) break;
 
     // Repeat header every so often
-    if (k % 50 == 0) {
+    // Ensure write on first loop (k=1)
+    if (k % 50 == 1) {
       Serial.println();
       Serial.println(hbuffer1);
       Serial.println(hbuffer2);
@@ -1572,30 +1578,42 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
   
   // Arduino implementation of printf drops %f support to reduce
   // memory usage.  We use dsostrf instead.
+  char hbuffer1[128],hbuffer2[128],hbuffer3[128];
   char sbuffer[128];
   char fbuffers[10][8];
 
   // Table header
-  Serial.println();
-  sprintf(sbuffer," %8s  %27s  %34s  %8s",
+  //Serial.println();
+  sprintf(hbuffer1," %8s  %27s  %34s  %8s",
           "time[ms]"," mass concentration [ug/m3]",
           "   number concentration [#/cm3]   "," average");
-  Serial.println(sbuffer);
-  sprintf(sbuffer," %8s  %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %8s",
+  //Serial.println(hbuffer1);
+  sprintf(hbuffer2," %8s  %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %8s",
           "        "," PM1.0"," PM2.5"," PM4.0","PM10.0",
           "PM0.5"," PM1.0"," PM2.5"," PM4.0","PM10.0","size[um]");
-  Serial.println(sbuffer);
-  sprintf(sbuffer," %8s  %27s  %34s  %8s",
+  //Serial.println(hbuffer2);
+  sprintf(hbuffer3," %8s  %27s  %34s  %8s",
           "--------","---------------------------",
           "----------------------------------","--------");
-  Serial.println(sbuffer);
+  //Serial.println(hbuffer3);
 
-  for (unsigned int k = 0; k < cycles; k++) {
+  // Repeat measurements cycles number of times.
+  // Logic here allows endless looping for cycles=-1 (maximum unsigned long).
+  for (unsigned long k = 1; k <= cycles; k++) {
     //delay(sampleInterval);
     // Break out of the testing loop if the user sends anything
     // over the serial interface.
     if (getSerialChar(sampleInterval) != (char)(-1)) break;
     
+    // Repeat header every so often
+    // Ensure write on first loop (k=1)
+    if (k % 50 == 1) {
+      Serial.println();
+      Serial.println(hbuffer1);
+      Serial.println(hbuffer2);
+      Serial.println(hbuffer3);
+    }
+
     unsigned long t = millis() - t0;
     if (!probePMSensor()) {
       sprintf(sbuffer," %8ld  %73s",
