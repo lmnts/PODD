@@ -64,19 +64,6 @@ int getRateCO2();
 int getRatePM();
 int getRateCO();
 
-void clearSerial();
-char getSerialChar(unsigned long timeout=0);
-String getSerialString(unsigned long timeout=0);
-
-char serialCharPrompt(String prompt, char default0=(char)(-1));
-String serialStringPrompt(String prompt, String default0="");
-bool serialYesNoPrompt(String prompt, bool reprompt, bool default0);
-bool serialTrueFalsePrompt(String prompt, bool reprompt, bool default0);
-bool serialBooleanPrompt(String prompt, bool reprompt, bool default0);
-bool serialBooleanPrompt(String prompt, bool reprompt, bool default0, char tchar, char fchar);
-int serialIntegerPrompt(String prompt, bool reprompt, int default0=INT_MIN);
-float serialFloatPrompt(String prompt, bool reprompt, float default0=NAN);
-
 void configureProjectSettings();
 void configureNodeSettings();
 void configureSensorTimingSettings();

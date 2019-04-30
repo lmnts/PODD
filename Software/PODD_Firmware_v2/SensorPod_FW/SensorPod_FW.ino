@@ -34,6 +34,7 @@
 
 // Project Files
 #include "pod_util.h"
+#include "pod_serial.h"
 #include "pod_config.h"
 #include "pod_sensors.h"
 #include "pod_network.h"

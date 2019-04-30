@@ -10,6 +10,7 @@
 
 #include "pod_sensors.h"
 #include "pod_util.h"
+#include "pod_serial.h"
 #include "pod_config.h"
 
 #include <limits.h>
@@ -395,31 +396,35 @@ void printSensorCheck() {
   //static const char UNPOWERED[] PROGMEM   = "    unknown (unpowered)    ";
   //static const char UNCHECKABLE[] PROGMEM = "unknown (cannot be checked)";
   // No cast required
-  FType AVAILABLE   = F("         available         ");
-  FType UNAVAILABLE = F("        unavailable        ");
-  FType UNPOWERED   = F("    unknown (unpowered)    ");
-  FType UNCHECKABLE = F("unknown (cannot be checked)");
+  //FType AVAILABLE   = F("         available         ");
+  //FType UNAVAILABLE = F("        unavailable        ");
+  //FType UNPOWERED   = F("    unknown (unpowered)    ");
+  //FType UNCHECKABLE = F("unknown (cannot be checked)");
+  FType AVAILABLE   = F("    available         ");
+  FType UNAVAILABLE = F("   unavailable        ");
+  FType UNPOWERED   = F("     unknown     [unpowered]");
+  FType UNCHECKABLE = F("     unknown     [cannot be checked]");
   Serial.print(F("Sensor availability:"));
   Serial.println();
-  Serial.print(F("  Light:                   "));
+  Serial.print(F("    Light:                   "));
   Serial.print(probeLightSensor() ? AVAILABLE : UNAVAILABLE);
   Serial.println();
-  Serial.print(F("  Sound:                   "));
+  Serial.print(F("    Sound:                   "));
   Serial.print(UNCHECKABLE);
   Serial.println();
-  Serial.print(F("  Temperature/humidity:    "));
+  Serial.print(F("    Temperature/humidity:    "));
   Serial.print(probeTemperatureSensor() ? AVAILABLE : UNAVAILABLE);
   Serial.println();
-  Serial.print(F("  Radiant temperature:     "));
+  Serial.print(F("    Radiant temperature:     "));
   Serial.print(UNCHECKABLE);
   Serial.println();
-  Serial.print(F("  CO2:                     "));
+  Serial.print(F("    CO2:                     "));
   Serial.print(probeCO2Sensor() ? AVAILABLE : UNAVAILABLE);
   Serial.println();
-  Serial.print(F("  CO:                      "));
+  Serial.print(F("    CO:                      "));
   Serial.print(UNCHECKABLE);
   Serial.println();
-  Serial.print(F("  Particulate matter:      "));
+  Serial.print(F("    Particulate matter:      "));
   if (isPMSensorPowered()) {
     Serial.print(probePMSensor() ? AVAILABLE : UNAVAILABLE);
   } else {
@@ -1030,7 +1035,6 @@ void stopSoundSampling() {
   
   // Halt ADC's continuously-sampling mode
   stopADCFreeRunning();
-  
 }
 
 
@@ -1048,6 +1052,10 @@ void sampleSoundISR() {
   // in continuously-sampling mode.
   int v = readAnalogFast();
   if (v < 0) return;
+  // Exclude extreme spikes
+  //if ((v < 32) || (v >= 992)) return;
+  //if ((v < 64) || (v >= 960)) return;
+  // Add sample to statistics
   soundData.add(v);
 }
 
@@ -1588,9 +1596,9 @@ int cozirGetValue(char c, int v) {
   //if (buff[pos] == '-') pos++;  // CozIR does not return negative values
   while ((buff[pos] >= '0') && (buff[pos] <= '9')) pos++;
   if ((pos < n) && !((buff[pos] == ' ') || (buff[pos] == '\r') || (buff[pos] == '\n'))) {
-    Serial.print(F("DEBUG: cozir buffer -> '"));
-    Serial.print(buff);
-    Serial.println(F("'"));
+    //Serial.print(F("DEBUG: cozir buffer -> '"));
+    //Serial.print(buff);
+    //Serial.println(F("'"));
     return -1;
   }
   // Standard Arduino routines do not include means to check
