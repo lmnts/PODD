@@ -42,6 +42,24 @@
 #endif
 
 
+// Types =======================================================================
+
+// To avoid string constants from using up space in dynamic memory,
+// PROGMEM or the F() macro can be used to store them in flash.
+// However, when using something like:
+//   static const char LINE[] PROGMEM = "----";
+// LINE must cast as (const __FlashStringHelper*) when printed:
+//   Serial.print((const __FlashStringHelper*)LINE);
+// Instead, LINE would print normally if we use:
+//   const __FlashStringHelper *LINE = F("----");
+//   Serial.print(LINE);
+// We define a typedef FType to simplify this: 
+//   FType LINE = F("----");
+// ASIDE: In the first case, "static" in required to make PROGMEM
+//        work as intended (unclear why).
+typedef const __FlashStringHelper * FType;
+
+
 // Constants/global variables ==================================================
 
 

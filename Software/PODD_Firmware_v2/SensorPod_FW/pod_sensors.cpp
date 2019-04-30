@@ -9,6 +9,7 @@
 */
 
 #include "pod_sensors.h"
+#include "pod_util.h"
 #include "pod_config.h"
 
 #include <limits.h>
@@ -27,6 +28,9 @@
 #include <sps30.h>
 #endif
 
+
+// General sensor-related variables
+bool sensorsInitialized = false;
 
 // ADC / analog measurements
 // Analog pin to continuously sample
@@ -50,7 +54,7 @@
 //#define FR_ADCSRB (0x00 | (1 << ADHSM))
 //   Enable ADC and set clock prescaling,
 //   but do not enable free-running mode
-#define DEF_ADCSRA  ((1 << ADEN) | ADC_PRESCALER)
+#define DEF_ADCSRA ((1 << ADEN) | ADC_PRESCALER)
 //   Enable ADC, set clock prescaling,
 //   set auto-trigger and start ADC conversions
 #define FR_ADCSRA ((1 << ADEN) | (1 << ADSC) |(1 << ADATE) | ADC_PRESCALER)
@@ -99,6 +103,12 @@ NeoSWSerial CO2_serial(CO2_PIN_RX, CO2_PIN_TX);
 // constructor as we do _not_ want the serial interface running
 // except when we actually want to communicate with the sensor.
 //COZIR czr(CO2_serial);
+
+// CO
+//#define numCoRead 4
+//int samples[numCoRead];
+//#define CoSpecSensor A3
+#define CO_PIN A3
 
 // Particulate Matter (PM) Sensor
 #ifdef USE_OLD_PM
@@ -149,7 +159,7 @@ float pmDensity10 = 0.0;  // Density of ~ 10 um dust (ug/m^3)
 float pmWeight = 0.0;  // Weighting used for moving average
 
 // Extra PM parameters for sensor testing
-#ifdef PM_TESTING
+#ifdef SENSOR_TESTING
 volatile uint8_t pmPulseState = B11;  // Bit k: pulse k (1 is high)
 volatile unsigned int pmPulseCount[4];
 volatile unsigned long pmPulseT0[4];
@@ -199,19 +209,19 @@ bool pmRunning = false;
 sps_values pmData;
 #endif
 
-// CO
-//#define numCoRead 4
-//int samples[numCoRead];
-#define CoSpecSensor A3
-
 // Thermistor and light Pins
-#define TempGpin A1
+//#define TempGpin A1
 //#define lightPin A2
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
 
 void sensorSetup() {
+  // Initialize/start I2C interface
+  // Wire changes the Two-Wire Control Register (TWCR), so can use
+  // its value to see if I2C interface already initialized.
+  if (TWCR == 0) Wire.begin();
+  
   // ADC initialization:
   // Using low-level ADC access rather than higher-level
   // Arduino analog routines for speed.  That means
@@ -233,6 +243,9 @@ void sensorSetup() {
   
   // CO2 sensor
   initCO2Sensor();
+  
+  // CO sensor
+  initCOSensor();
   
   // PM Sensor
   // Power to sensor initially turned off: must call
@@ -316,6 +329,274 @@ bool verifySensors() {
 }
 
 
+
+// Sensor Initialization / Verification --------------------------------
+
+/* Perform any sensor initialization.  Need only be called once.
+   NOTE: This does not power on and/or start all the sensors.
+   Sound sampling needs to be started and the particulate matter
+   sensor needs to be powered on and started. */
+void initSensors() {
+  // Check if already initialized
+  if (sensorsInitialized) return;
+
+  // Initialize/start I2C interface
+  // Wire changes the Two-Wire Control Register (TWCR), so can use
+  // its value to see if I2C interface already initialized.
+  if (TWCR == 0) Wire.begin();
+  
+  // ADC initialization:
+  // Using low-level ADC access rather than higher-level
+  // Arduino analog routines for speed.  That means
+  // readAnalog() must be used instead of analogRead()!
+  //analogReference(EXTERNAL);
+  initADC();
+  
+  // Light sensor
+  initLightSensor();
+
+  // Sound sensor
+  initSoundSensor();
+  
+  // Temperature/humidity sensor
+  initTemperatureSensor();
+
+  // Globe/radiant temperature sensor
+  initGlobeTemperatureSensor();
+  
+  // CO2 sensor
+  initCO2Sensor();
+  
+  // CO sensor
+  initCOSensor();
+  
+  // PM Sensor
+  // Power to sensor initially turned off: must call
+  // appropriate routines to power up and start PM sensor.
+  initPMSensor();
+
+  // Flag to indicate routine has already been called
+  sensorsInitialized = true;
+
+  // Some sensors need a little time before further interactions
+  delay(100);
+}
+
+
+/* Prints to serial the status of each sensor.
+     Available: sensor is known to be present & working
+     Unavailable: sensor is known not be present & working
+     Unknown: sensor presence cannot be determined
+     */
+void printSensorCheck() {
+  // Must cast as (const __FlashStringHelper*) when printing...
+  //static const char AVAILABLE[] PROGMEM   = "         available         ";
+  //static const char UNAVAILABLE[] PROGMEM = "        unavailable        ";
+  //static const char UNPOWERED[] PROGMEM   = "    unknown (unpowered)    ";
+  //static const char UNCHECKABLE[] PROGMEM = "unknown (cannot be checked)";
+  // No cast required
+  FType AVAILABLE   = F("         available         ");
+  FType UNAVAILABLE = F("        unavailable        ");
+  FType UNPOWERED   = F("    unknown (unpowered)    ");
+  FType UNCHECKABLE = F("unknown (cannot be checked)");
+  Serial.print(F("Sensor availability:"));
+  Serial.println();
+  Serial.print(F("  Light:                   "));
+  Serial.print(probeLightSensor() ? AVAILABLE : UNAVAILABLE);
+  Serial.println();
+  Serial.print(F("  Sound:                   "));
+  Serial.print(UNCHECKABLE);
+  Serial.println();
+  Serial.print(F("  Temperature/humidity:    "));
+  Serial.print(probeTemperatureSensor() ? AVAILABLE : UNAVAILABLE);
+  Serial.println();
+  Serial.print(F("  Radiant temperature:     "));
+  Serial.print(UNCHECKABLE);
+  Serial.println();
+  Serial.print(F("  CO2:                     "));
+  Serial.print(probeCO2Sensor() ? AVAILABLE : UNAVAILABLE);
+  Serial.println();
+  Serial.print(F("  CO:                      "));
+  Serial.print(UNCHECKABLE);
+  Serial.println();
+  Serial.print(F("  Particulate matter:      "));
+  if (isPMSensorPowered()) {
+    Serial.print(probePMSensor() ? AVAILABLE : UNAVAILABLE);
+  } else {
+    Serial.print(UNPOWERED);
+  }
+  Serial.println();
+}
+
+
+
+// All-Sensor Testing --------------------------------------------------
+
+/* Helper function: convert a sensor value to a fixed-length string. */
+void sensorValueToString(int v, char *buff) {
+  if (v != -1) {
+    sprintf(buff," %6d ",v);
+  } else {
+    strcpy(buff,"    -- ");
+  }
+}
+
+
+/* Helper function: convert a sensor value to a fixed-length string. */
+void sensorValueToString(float v, char *buff) {
+  if (!isnan(v)) {
+    // Avoid overflowing buffer
+    if (v > 99999.99) v = 99999.99;
+    if (v < -9999.99) v = -9999.99;
+    dtostrf(v,8,2,buff);
+  } else {
+    strcpy(buff,"   --  ");
+  }
+}
+
+/* Testing routine to show all sensor values.
+   Will sample the sensors for the given number of sample periods.
+   Sample period in milliseconds. */
+void testSensors(unsigned long cycles, unsigned long sampleInterval) {
+  Serial.println();
+  Serial.println(F("Sensor testing"));
+  Serial.println(F("--------------"));
+  Serial.println();
+  
+  // Ensure sensors are initialized
+  if (!sensorsInitialized) {
+    Serial.println(F("Initializing sensors...."));
+    initSensors();
+    //delay(100);
+  }
+  
+  // Ensure sound is being sampled
+  bool wasSoundSampling = isSoundSampling();
+  if (!wasSoundSampling) {
+    //Serial.println(F("Initializing sound sensor...."));
+    //initADC();
+    //initSoundSensor();
+    Serial.println(F("Starting sound sampling...."));
+    startSoundSampling();
+  } else {
+    // Start a new set of samples
+    //Serial.println(F("Starting sound sampling...."));
+    resetSoundData();
+  }
+
+  // Ensure PM sensor is powered up and running
+  bool wasPMPowered = isPMSensorPowered();
+  bool wasPMRunning = isPMSensorRunning();
+  if (!wasPMPowered) {
+    //Serial.println(F("Initializing particulate matter sensor...."));
+    //initPMSensor();
+    //delay(100);
+    Serial.println(F("Powering up particulate matter sensor...."));
+    powerOnPMSensor();
+    delay(1000);
+  }
+  if (!wasPMRunning && isPMSensorPowered()) {
+    Serial.println(F("Starting particulate matter measurements...."));
+    startPMSensor(false);
+    Serial.println(F("  PM sensor takes 5-10 seconds to return the first measurement"));
+    Serial.println(F("  and 60-120 seconds for measurements to settle down."));
+    delay (1000);
+  }
+  
+  // Arduino implementation of printf drops %f support to reduce
+  // memory usage.  We use dsostrf instead.
+  char hbuffer1[128],hbuffer2[128],hbuffer3[128];
+  char sbuffer[128];
+  char vbuffers[9][16];
+  
+  // Table header
+  //Serial.println();
+  sprintf(hbuffer1," %9s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+          "   time  ","  light ","  sound ","humidity","  temp  ","rad temp",
+          "   CO2  ","   CO   "," PM 2.5 ","  PM 10 ");
+  //Serial.println(hbuffer1);
+  // Arduino serial monitor allows for UTF-8 characters, like degree symbol.
+  sprintf(hbuffer2," %9s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+          "   [ms]  ","  [lux] ","  [???] ","   [%]  ","  [°F]  ","  [°F]  ",
+          "  [ppm] ","  [??]  "," [ug/m3]"," [ug/m3]");
+  //Serial.println(hbuffer2);
+  sprintf(hbuffer3," %9s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+          " --------","--------","--------","--------","--------","--------",
+          "--------","--------","--------","--------");
+  //Serial.println(hbuffer3);
+
+  // Time at start of test (fixed)
+  unsigned long t0 = millis();
+  // Time at start of measurement (updated each loop)
+  unsigned long t = millis();
+  
+  // Repeat measurements cycles number of times.
+  // Logic here allows endless looping for cycles=-1 (maximum unsigned long).
+  for (unsigned long k = 1; k <= cycles; k++) {
+    // Try to adjust delay time to keep consistent interval.
+    unsigned long dt = millis() - t;
+    unsigned long tdelay = (dt < sampleInterval) ? sampleInterval - dt : 0;
+    // Ensure some delay to allow keystrokes to be read
+    if (tdelay < sampleInterval/2) tdelay = sampleInterval/2;
+    //delay(tdelay);
+    // Break out of the testing loop if the user sends anything
+    // over the serial interface.
+    if (getSerialChar(tdelay) != (char)(-1)) break;
+    
+    // Update loop time
+    t = millis();
+
+    // Repeat header every so often
+    // Ensure write on first loop (k=1)
+    if (k % 50 == 1) {
+      Serial.println();
+      Serial.println(hbuffer1);
+      Serial.println(hbuffer2);
+      Serial.println(hbuffer3);
+    }
+
+    // Extract sensor measurements and convert to strings.
+    // Same order as will appear in output.
+    sensorValueToString(getLight(),vbuffers[0]);
+    sensorValueToString(getSound(),vbuffers[1]);
+    retrieveTemperatureData();
+    sensorValueToString(getRelHumidity(),vbuffers[2]);
+    sensorValueToString(getTemperature(),vbuffers[3]);
+    sensorValueToString(getGlobeTemperature(),vbuffers[4]);
+    sensorValueToString(getCO2(),vbuffers[5]);
+    sensorValueToString(getCO(),vbuffers[6]);
+    retrievePMData();
+    sensorValueToString(getPM2_5(),vbuffers[7]);
+    sensorValueToString(getPM10(),vbuffers[8]);
+
+    sprintf(sbuffer," %9ld %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+            t-t0,vbuffers[0],vbuffers[1],vbuffers[2],vbuffers[3],vbuffers[4],
+            vbuffers[5],vbuffers[6],vbuffers[7],vbuffers[8]);
+    Serial.println(sbuffer);
+  }
+  
+  Serial.println();
+  
+  // Turn off sound sampling and/or PM sensor if we started them
+  if (!wasSoundSampling) {
+    Serial.println(F("Stopping sound sampling...."));
+    stopSoundSampling();
+  }
+  if (!wasPMRunning && isPMSensorRunning()) {
+    Serial.println(F("Stopping particulate matter measurements...."));
+    stopPMSensor();
+  }
+  if (!wasPMPowered && isPMSensorPowered()) {
+    Serial.println(F("Powering down particulate matter sensor...."));
+    powerOffPMSensor();
+  }
+  
+  Serial.println(F("Sensor testing is complete."));
+  Serial.println();
+}
+
+
+
 // ADC / Analog Measurements -------------------------------------------
 
 /* To allow for rapid ADC measurements of the microphone without
@@ -379,13 +660,6 @@ void startADCFreeRunning() {
 }
 
 
-/* Indicates if the ADC is currently in free-running (continuously
-   sampling) mode. */
-bool isADCFreeRunning() {
-  return adcFreeRunning;
-}
-
-
 /* Stops the ADC from continously taking measurements. */
 void stopADCFreeRunning() {
   if (!adcFreeRunning) return;
@@ -407,12 +681,28 @@ void stopADCFreeRunning() {
 }
 
 
+/* Indicates if the ADC is currently in free-running (continuously
+   sampling) mode. */
+bool isADCFreeRunning() {
+  return adcFreeRunning;
+}
+
+
 /* Takes an analog measurement of the given pin.  If the ADC is in
    free-running mode, it will stop, read the new pin, and then resume
    free-running on the original pin. */
 int readAnalog(uint8_t pin) {
   bool wasrunning = adcFreeRunning;
   if (adcFreeRunning) stopADCFreeRunning();
+  // Debugging
+  //Serial.print("ADCSRA: ");
+  //Serial.print(ADCSRA,HEX);
+  //Serial.println();
+  // Wait for any existing conversion to complete
+  //while ((ADCSRA & (1 << ADSC)) != 0) continue;
+  // Also ensure sensor is not in free-running mode (it _shouldn't_ be...)
+  while (((ADCSRA & (1 << ADATE)) == 0) && ((ADCSRA & (1 << ADSC)) != 0)) continue;
+  //delay(1);
   // analogRead will wait for ADC conversion
   int v = analogRead(pin);
   if (wasrunning) startADCFreeRunning();
@@ -452,6 +742,7 @@ int readAnalogFast() {
   ADCSRA |= (1 << ADIF);
   return v;
 }
+
 
 
 // Sensor Values -------------------------------------------------------
@@ -553,10 +844,13 @@ int getCO2() {
 }
 */
 
+/*
 float getCO() {
   //return analogRead(CoSpecSensor); // TODO: Conversion!
   return readAnalog(CoSpecSensor); // TODO: Conversion!
 }
+*/
+
 
 
 // Light Sensor [OPT3001] ----------------------------------------------
@@ -579,6 +873,14 @@ void initLightSensor() {
 }
 
 
+/* Tests communication with the ambient light sensor. */
+bool probeLightSensor() {
+  // Check by trying to get a measurement value
+  OPT3001 reading = opt3001.readResult();
+  return (reading.error == NO_ERROR);
+}
+
+
 /* Gets the ambient light level in lux.  Returns NAN if there
    is a problem reading the sensor. */
 float getLight() {
@@ -598,13 +900,6 @@ float getLight() {
   return reading.lux;
 }
 
-
-/* Tests communication with the ambient light sensor. */
-bool probeLightSensor() {
-  // Check by trying to get a measurement value
-  OPT3001 reading = opt3001.readResult();
-  return (reading.error == NO_ERROR);
-}
 
 
 // Sound Sensor --------------------------------------------------------
@@ -657,6 +952,8 @@ void initSoundSensor() {
   stopSoundSampling();
   //resetSoundData();
   soundData.reset();
+  // Warn about uncalibrated results.
+  Serial.println(F("Warning: Sound level values are uncalibrated (units are arbitrary)."));
 }
 
 
@@ -770,6 +1067,8 @@ void resetSoundData() {
 /* Sound level testing routine.
    Will sample the sensor for the given number of sample periods.
    Sample period in milliseconds. */
+// Sensor testing >>>>>>>>>>>>>>>>>>>>>>
+#ifdef SENSOR_TESTING
 void testSoundSensor(unsigned long cycles, unsigned long sampleInterval) {
   bool wasSampling = isSoundSampling();
   Serial.println();
@@ -851,6 +1150,9 @@ void testSoundSensor(unsigned long cycles, unsigned long sampleInterval) {
   Serial.println(F("Sound sensor testing is complete."));
   Serial.println();
 }
+#endif
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
 
 
 // Temperature/Humidity Sensor [HIH8120] -------------------------------
@@ -873,6 +1175,22 @@ TempRHData temperatureData;
 void initTemperatureSensor() {
   //hih.initialise();
   temperatureData.reset();
+}
+
+
+/* Tests communication with the temperature/humidity sensor. */
+bool probeTemperatureSensor() {
+  // Test communication by requesting data from sensor.
+  // Note writing to sensor triggers a conversion and would
+  // tie up the sensor.
+  const size_t BUFF_LEN = 2;
+  //uint8_t buff[BUFF_LEN];
+  size_t n = Wire.requestFrom(HIH_ADDR,BUFF_LEN);
+  // Clear I2C buffer
+  while (Wire.available()) Wire.read();
+  // Communication successful if we received as many
+  // bytes as requested
+  return (n == BUFF_LEN);
 }
 
 
@@ -941,24 +1259,11 @@ float getRelHumidity() {
 }
 
 
-/* Tests communication with the temperature/humidity sensor. */
-bool probeTemperatureSensor() {
-  // Test communication by requesting data from sensor.
-  // Note writing to sensor triggers a conversion and would
-  // tie up the sensor.
-  const size_t BUFF_LEN = 2;
-  //uint8_t buff[BUFF_LEN];
-  size_t n = Wire.requestFrom(HIH_ADDR,BUFF_LEN);
-  // Clear I2C buffer
-  while (Wire.available()) Wire.read();
-  // Communication successful if we received as many
-  // bytes as requested
-  return (n == BUFF_LEN);
-}
-
 /* Temperature/humidity testing routine.
    Will sample the sensor for the given number cycles.
    Sample period in milliseconds. */
+// Sensor testing >>>>>>>>>>>>>>>>>>>>>>
+#ifdef SENSOR_TESTING
 void testTemperatureSensor(unsigned long cycles, unsigned long sampleInterval) {
   Serial.println();
   Serial.println(F("Temperature/humidity testing"));
@@ -1019,6 +1324,8 @@ void testTemperatureSensor(unsigned long cycles, unsigned long sampleInterval) {
   Serial.println(F("Temperature/humidity sensor testing is complete."));
   Serial.println();
 }
+#endif
+//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 
 
@@ -1036,7 +1343,22 @@ void testTemperatureSensor(unsigned long cycles, unsigned long sampleInterval) {
 /* Initializes the temperature sensor placed inside a dark sphere;
    intended for radiant temperature measurements. */
 void initGlobeTemperatureSensor() {
-  // nothing to do
+  // This will set the pin mode.
+  //pinMode(RADIANT_TEMP_PIN,INPUT);
+  // Analog read will set the pin mode.
+  // Note use of readAnalog() instead of analogRead().
+  readAnalog(RADIANT_TEMP_PIN);
+}
+
+
+/* Tests validity of the globe temperature sensor. */
+bool probeGlobeTemperatureSensor() {
+  // Make measurement of voltage across fixed resistor R in
+  // GND-R-Rt-3.3V voltage divider.  If voltage is nearly
+  // zero, the thermistor is likely not connected (effectively
+  // infinite resistance) and any readings are invalid.
+  // Note use of readAnalog() instead of analogRead().
+  return (readAnalog(RADIANT_TEMP_PIN) >= 10);
 }
 
 
@@ -1076,17 +1398,6 @@ float getGlobeTemperature() {
 }
 
 
-/* Tests validity of the globe temperature sensor. */
-bool probeGlobeTemperatureSensor() {
-  // Make measurement of voltage across fixed resistor R in
-  // GND-R-Rt-3.3V voltage divider.  If voltage is nearly
-  // zero, the thermistor is likely not connected (effectively
-  // infinite resistance) and any readings are invalid.
-  // Note use of readAnalog() instead of analogRead().
-  return (readAnalog(RADIANT_TEMP_PIN) >= 10);
-}
-
-
 
 // CO2 Sensor [CozIR-A] ------------------------------------------------
 
@@ -1103,6 +1414,8 @@ void initCO2Sensor() {
   // Set operating mode to polling
   cozirSendCommand('K',2);
   //czr.SetOperatingMode(CZR_POLLING);
+  // Sensor needs ~ 8 - 10 ms before responding to further interaction.
+  delay(12);
   // Set digital filter to 32: measurements are moving average of
   // previous NN measurements, which are taken at 2 Hz.
   cozirSendCommand('A',32);
@@ -1110,8 +1423,28 @@ void initCO2Sensor() {
 }
 
 
-/* Gets the current CO2 level, in ppm.  Returns -1 if something failed. */
+/* Tests communication with the CO2 sensor.
+   Note communication tends to fail if less than 10 ms between
+   interactions with sensor (init, probe, read).  May need to
+   ensure at least 10 ms since last interaction. */
+bool probeCO2Sensor() {
+  // Communications sometimes fail if recently used
+  //delay(10);
+  // Only enable serial interface while using it
+  enableCO2Serial();
+  bool b = cozirSendCommand('a');  // arbitrary info command
+  disableCO2Serial();
+  return b;
+}
+
+
+/* Gets the current CO2 level, in ppm.  Returns -1 if something failed.
+    Note with software serial communication, bit errors might occasionally
+   occur: an occasional invalid value should be expected (and handled
+   appropriately). */
 int getCO2() {
+  // Communications sometimes fail if recently used
+  //delay(10);
   // Only enable serial interface while using it
   enableCO2Serial();
   //int v = czr.CO2();
@@ -1126,21 +1459,13 @@ void setCO2(int ppm) {
   // Ignore invalid values
   if (ppm <= 0) return;
   if (ppm > 10000) return;
+  // Communications sometimes fail if recently used
+  //delay(10);
   // Only enable serial interface while using it
   enableCO2Serial();
   //czr.CalibrateKnownGas((uint16_t)ppm);
   cozirSendCommand('X',ppm);
   disableCO2Serial();
-}
-
-
-/* Tests communication with the CO2 sensor. */
-bool probeCO2() {
-  // Only enable serial interface while using it
-  enableCO2Serial();
-  bool b = cozirSendCommand('a');  // arbitrary info command
-  disableCO2Serial();
-  return b;
 }
 
 
@@ -1177,9 +1502,6 @@ String cozirCommandString(char c, int v) {
 }
 
 
-// TODO: Have commands read start of response to check for success
-//  (CozIR always sends response starting with sent command character).
-
 /* Sends single character command and, optionally, an integer value to 
    the CozIR CO2 sensor over the serial interface.  If integer is
    negative, it will be omitted.  Returns true if communication was
@@ -1195,7 +1517,8 @@ bool cozirSendCommand(char c, int v) {
   CO2_serial.print(s);
   CO2_serial.print("\r\n");
   // Wait a limited time for response
-  const int TIMEOUT_MS = 20;
+  //const int TIMEOUT_MS = 20;
+  const int TIMEOUT_MS = 15;
   for (int k = 0; k < TIMEOUT_MS; k++) {
     if (CO2_serial.available()) {
       // First non-space character should be same as command
@@ -1214,7 +1537,10 @@ bool cozirSendCommand(char c, int v) {
 
 
 /* Returns the (first) integer value provided by the CozIR CO2 sensor after
-   sending the given command.  Returns -1 if something failed. */
+   sending the given command.  Returns -1 if something failed.
+   Note with software serial communication, bit errors might occasionally
+   occur: an occasional invalid value should be expected (and handled
+   appropriately). */
 int cozirGetValue(char c, int v) {
   // Send command
   if (!cozirSendCommand(c,v)) return -1;
@@ -1242,15 +1568,45 @@ int cozirGetValue(char c, int v) {
   }
   buff[n] = '\0';
 
+  // CozIR response string is command character, a space, and
+  // one or more (space separated) non-negative integers, possibly
+  // with leading zeros.  The response is terminated with \r\n.
+  // Here, the command character is already stripped off and
+  // the buffer is only sized to ensure the first returned number
+  // is available: other numbers and the response termination may
+  // be truncated.
+  
   // Parse response
   // Should begin with a space...
   if (n < 2) return -1;
+  // Check that next field is numeric and, specifically, a positive
+  // integer.  Ensure only digits until we reach a space, newline, or
+  // the end of the read buffer: if we see anything else, it is an
+  // invalid character (possibly due to a serial bit error).
+  size_t pos = 0;
+  while (buff[pos] == ' ') pos++;
+  //if (buff[pos] == '-') pos++;  // CozIR does not return negative values
+  while ((buff[pos] >= '0') && (buff[pos] <= '9')) pos++;
+  if ((pos < n) && !((buff[pos] == ' ') || (buff[pos] == '\r') || (buff[pos] == '\n'))) {
+    Serial.print(F("DEBUG: cozir buffer -> '"));
+    Serial.print(buff);
+    Serial.println(F("'"));
+    return -1;
+  }
   // Standard Arduino routines do not include means to check
   // for invalid input, so we use following instead.
   //const char *buff = s.c_str();
   char *end;
   long l = strtol(buff,&end,10);
+  //if ((end == buff) || (l <= 0)) {
+  //  Serial.print(F("DEBUG: cozir buffer -> '"));
+  //  Serial.print(buff);
+  //  Serial.println(F("'"));
+  //}
+  // No valid data to convert
+  // Should not occur with check above...
   if (end == buff) return -1;
+  // Check if characters were numeric
   return (int)l;
 }
 
@@ -1275,6 +1631,75 @@ void calibrateCO2() {
   //czr.SetDigiFilter(32);
 }
 */
+
+
+
+// CO Sensor [SPEC 3SP_CO_1000] ----------------------------------------
+
+/* Initializes the CO sensor. */
+void initCOSensor() {
+  // This will set the pin mode.
+  //pinMode(CO_PIN,INPUT);
+  // Analog read will set the pin mode.
+  // Note use of readAnalog() instead of analogRead().
+  readAnalog(CO_PIN);
+  // Warn about uncalibrated results.
+  Serial.println(F("Warning: CO measurement values are uncalibrated (units are arbitrary)."));
+}
+
+
+/* Tests validity of the globe CO sensor. */
+bool probeCOSensor() {
+  // If the sensor is not connected, the voltage should be
+  // nearly zero.
+  // Note use of readAnalog() instead of analogRead().
+  //return (readAnalog(CO_PIN) >= 10);
+  // ...but those are valid (and typical!) low-CO measurement
+  // values if the sensor is connected!  Does not seem to be
+  // an easy way to determine if sensor is connected, so we
+  // just return true.
+  return true;
+}
+
+
+/* Gets the current CO level, in -ppm-.  Returns NAN if something failed.
+   Note no temperature compensation is performed, though this sensor
+   has a significant temperature dependence when temperatures are
+   above around 80 F.
+   NOTE: Currently uncalibrated -- this is NOT actually ppm! */
+float getCO() {
+  // Sensitivity Code is final n.nn number on sensor's circular label.
+  // This is different for every individual sensor!
+  // Vary from ~ 2 - 7, with most of the newer ones ~ 2.5 - 3.5.
+  // TODO: Add ability to set sensitivity code through PODD menu
+  //       system and save/read to EEPROM
+  //float coSensitivityCode = 3.0;  // a typical value
+  
+  // Formulas from SPEC Sensors ULPSM-CO 968-01 document.
+  // NOTE: This is for a companion board we are not using!
+  /*
+  float M = coSensitivityCode * 100 *1e-9 * 1e3;
+  // Reference level is Vp/2, with no offset.
+  // Converted to ADC units (0-1023).
+  const int VGAS0 = 512 + 0;
+  // Measured level
+  int Vgas = readAnalog(CO_PIN);
+  // CO concentration in ppm
+  return (Vgas - VGAS0) / M;
+  */
+
+  // PODD board contains a potentiostat circuit as shown in the
+  // SPEC Sensor Operation Overview document (Figure 3), but the
+  // Counter and Reference lines seem to be reversed.
+  // The output is presumably linear with CO concentration, but
+  // it is unclear how to calibrate the results from this circuit.
+  // It is also difficult to do a calibration by hand due to the
+  // difficulty (and dangerousness) of creating a known, high-CO
+  // environment.  For now simply return the the ADC output.
+  // Note use of readAnalog() instead of analogRead().
+  return readAnalog(CO_PIN);
+}
+
 
 
 // Particular Matter Sensor (OLD) --------------------------------------
@@ -1339,6 +1764,7 @@ float getPM10() {
 }
 
 #endif
+
 
 
 // Particular Matter Sensor [SPS30] ------------------------------------
@@ -1437,6 +1863,7 @@ void stopPMSensor() {
   if (!pmRunning) return;
   sps30.stop();
   Serial.println(F("Stopped PM sensor."));
+  pmRunning = false;
 }
 
 
@@ -1525,7 +1952,7 @@ float getPM10() {
 /* Utility function to write dots to serial output over N consecutive
    pause intervals [ms]. */
 // Sensor testing >>>>>>>>>>>>>>>>>>>>>>
-#ifdef PM_TESTING
+#ifdef SENSOR_TESTING
 void printPMPauseProgress(unsigned int N, unsigned long pause) {
   for (unsigned int k = 0; k < N; k++) {
     delay(pause);
@@ -1542,7 +1969,7 @@ void printPMPauseProgress(unsigned int N, unsigned long pause) {
    initial warmup period.  Sample and warmup periods in
    milliseconds. */
 // Sensor testing >>>>>>>>>>>>>>>>>>>>>>
-#ifdef PM_TESTING
+#ifdef SENSOR_TESTING
 void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
                   unsigned long offTime, unsigned long idleTime) {
   Serial.println();
@@ -1658,6 +2085,7 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
 #endif
 
 
+
 // Particular Matter Sensor [SM-PWM-01C] -------------------------------
 
 #ifdef USE_SMPWM01C_PM
@@ -1726,7 +2154,7 @@ void resetPMSampling() {
   }
 
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
-  #ifdef PM_TESTING
+  #ifdef SENSOR_TESTING
   pmPulseState = B11;
   for (uint8_t k = 0; k < 4; k++) {
     pmPulseCount[k] = 0;
@@ -1776,7 +2204,7 @@ void processPMPulseISR() {
   }
 
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
-  #ifdef PM_TESTING
+  #ifdef SENSOR_TESTING
   uint8_t pulseState =   (digitalRead(PM_PIN_P1) == HIGH ? 1 : 0)
                        + (digitalRead(PM_PIN_P2) == HIGH ? 2 : 0);
   if (pulseState != pmPulseState) {
@@ -1819,7 +2247,7 @@ void processPM() {
   }
 
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
-  #ifdef PM_TESTING
+  #ifdef SENSOR_TESTING
   uint8_t pulseState =   (digitalRead(PM_PIN_P1) == HIGH ? 1 : 0)
                        + (digitalRead(PM_PIN_P2) == HIGH ? 2 : 0);
   pmPulseTSum[pmPulseState] += (t0u - pmPulseT0[pmPulseState]);
@@ -1841,7 +2269,7 @@ void processPM() {
   (void)_pmPulse1N;
   (void)_pmPulse2N;
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
-  #ifdef PM_TESTING
+  #ifdef SENSOR_TESTING
   unsigned int _pmPulseCount[4];
   unsigned long _pmPulseTSum[4];
   for (uint8_t k = 0; k < 4; k++) {
@@ -1862,7 +2290,7 @@ void processPM() {
   // Must correct for different units (us vs ms).
   float inverseSampleInterval = 1 / (1000.0 * sampleInterval);
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
-  #ifdef PM_TESTING
+  #ifdef SENSOR_TESTING
   // Higher resolution sample interval
   unsigned long pmPulseTSumTotal = 0;
   for (uint8_t k = 0; k < 4; k++) pmPulseTSumTotal += pmPulseTSum[k];
@@ -1921,7 +2349,7 @@ void processPM() {
   pmLastSampleTime = millis();
 
   // Sensor testing >>>>>>>>>>>>>>>>>>>>
-  #ifdef PM_TESTING
+  #ifdef SENSOR_TESTING
   // Arduino implementation of printf drops %f support to reduce
   // memory usage.  We use dsostrf instead.
   char sbuffer[128];
@@ -2069,7 +2497,7 @@ float getPM10() {
 /* Utility function to write dots to serial output over N consecutive
    pause intervals [ms]. */
 // Sensor testing >>>>>>>>>>>>>>>>>>>>>>
-#ifdef PM_TESTING
+#ifdef SENSOR_TESTING
 void printPMPauseProgress(unsigned int N, unsigned long pause) {
   for (unsigned int k = 0; k < N; k++) {
     delay(pause);
@@ -2086,7 +2514,7 @@ void printPMPauseProgress(unsigned int N, unsigned long pause) {
    initial warmup period.  Sample and warmup periods in
    milliseconds. */
 // Sensor testing >>>>>>>>>>>>>>>>>>>>>>
-#ifdef PM_TESTING
+#ifdef SENSOR_TESTING
 void testPMSensor(unsigned long cycles, unsigned long sampleTime,
                   unsigned long warmupTime) {
   Serial.println();
@@ -2114,9 +2542,9 @@ void testPMSensor(unsigned long cycles, unsigned long sampleTime,
     Serial.println();
     processPM();
 
-    // If PM_TESTING is defined, processPM() already writes
+    // If SENSOR_TESTING is defined, processPM() already writes
     // measurement info to serial.
-    #if !defined(PM_TESTING)
+    #if !defined(SENSOR_TESTING)
     // Arduino implementation of printf drops %f support to reduce
     // memory usage.  We use dsostrf instead.
     char sbuffer[16];

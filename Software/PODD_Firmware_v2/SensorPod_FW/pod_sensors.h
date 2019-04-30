@@ -33,15 +33,18 @@
 #define MIN_PM10 -1
 #define MAX_PM10 10000
 
-// Define this to enable particulate matter sensor testing
-// output and routines.
-//#define PM_TESTING
+// Define this to enable individual sensor testing output and routines.
+//#define SENSOR_TESTING
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
 
+// Multi-sensor routines
 void sensorSetup();
 bool verifySensors();
+void initSensors();
+void printSensorCheck();
+void testSensors(unsigned long cycles = -1, unsigned long sampleInterval = 1000);
 
 // ADC routines
 void initADC();
@@ -52,18 +55,18 @@ int readAnalog(uint8_t pin);
 int readAnalogFast();
 
 // get readings
-float getRHTemp();
-float getRHHum();
+//float getRHTemp();
+//float getRHHum();
 //float getLight();
-double getGlobeTemp();
+//double getGlobeTemp();
 //double getSound();
-int getCO2();
-float getCO();
+//int getCO2();
+//float getCO();
 
 // Ambient light sensor
 void initLightSensor();
-float getLight();
 bool probeLightSensor();
+float getLight();
 
 // Sound sensor
 void initSoundSensor();
@@ -73,32 +76,40 @@ void stopSoundSampling();
 bool isSoundSampling();
 void sampleSoundISR();
 void resetSoundData();
-void testSoundSensor(unsigned long cycles, unsigned long sampleTime = 1000);
+#ifdef SENSOR_TESTING
+void testSoundSensor(unsigned long cycles = -1, unsigned long sampleInterval = 1000);
+#endif
 
 // Temperature/humidity sensor
 void initTemperatureSensor();
+bool probeTemperatureSensor();
 bool retrieveTemperatureData();
 float getTemperature();
 float getRelHumidity();
-bool probeTemperatureSensor();
-void testTemperatureSensor(unsigned long cycles, unsigned long sampleTime = 1000);
+#ifdef SENSOR_TESTING
+void testTemperatureSensor(unsigned long cycles = -1, unsigned long sampleInterval = 1000);
+#endif
 
 // Globe/radiant temperature sensor
 void initGlobeTemperatureSensor();
-float getGlobeTemperature();
 bool probeGlobeTemperatureSensor();
+float getGlobeTemperature();
 
 // CO2 sensor
 void initCO2Sensor();
+bool probeCO2Sensor();
 int getCO2();
 void setCO2(int ppm);
-bool probeCO2Sensor();
 void enableCO2Serial();
 void disableCO2Serial();
 String cozirCommandString(char c, int v);
 bool cozirSendCommand(char c, int v=-1);
 int cozirGetValue(char c, int v=-1);
 
+// CO sensor
+void initCOSensor();
+bool probeCOSensor();
+float getCO();
 
 // Uncomment to enable code for corresponding particulate matter sensor.
 // If none are defined, dummy code will be provided.
@@ -128,9 +139,9 @@ inline void updatePM(){retrievePMData();}  // for compatibility
 float getPM2_5();
 float getPM10();
 // Below only used for testing
-#ifdef PM_TESTING
+#ifdef SENSOR_TESTING
 void printPMPauseProgress(unsigned int N, unsigned long pause = 1000);
-void testPMSensor(unsigned long cycles, unsigned long sampleTime = 3000,
+void testPMSensor(unsigned long cycles = -1, unsigned long sampleInterval = 3000,
                   unsigned long offTime = 10000, unsigned long idleTime = 10000);
 #endif
 // SM-PWM-01C Particulate Matter Sensor routines
@@ -147,7 +158,7 @@ void processPM();
 float getPM2();
 float getPM10();
 // Below only used for testing
-#ifdef PM_TESTING
+#ifdef SENSOR_TESTING
 void printPMPauseProgress(unsigned int N, unsigned long pause = 1000);
 void testPMSensor(unsigned long cycles, unsigned long sampleTime = 30000,
                   unsigned long warmupTime = 90000);

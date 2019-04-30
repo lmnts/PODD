@@ -30,6 +30,7 @@
 
 #include <Wire.h>
 #include <avr/interrupt.h>
+#include <avr/pgmspace.h>
 
 // Project Files
 #include "pod_util.h"
@@ -45,8 +46,8 @@
 //--------------------------------------------------------------------------------------------- [setup]
 
 void setup() {
-  // Alternative to F() macro wrapping so we can reuse this string
-  const char LINE[] PROGMEM = "------------------------------------------------------------------------";
+  // Places string in flash memory rather than dynamic memory
+  FType LINE = F("------------------------------------------------------------------------");
   
   // Time delay gives chance to connect a terminal after reset
   delay(5000);
@@ -58,21 +59,20 @@ void setup() {
   Serial.println();
   delay(1000);
   
-  #ifdef PM_TESTING
+  #ifdef SENSOR_TESTING
   Wire.begin();
+  // Sound sensor testing
+  testSoundSensor(-1,1000);
+  // Temperature/humidity sensor testing
+  testTemperatureSensor(-1,1000);
+  // Particulate matter sensor testing
   //testPMSensor(-1,5000,10000,10000);
   testPMSensor(-1,5000,5000,5000);
   //testPMSensor(-1,500,1,1);
   #endif
-
-  // Sound sensor testing
-  //testSoundSensor(-1,1000);
-  
-  // Temperature/humidity sensor testing
-  //Wire.begin();
-  //testTemperatureSensor(-1,1000);
   
   Serial.println(LINE);
+  //Serial.println((const __FlashStringHelper*)LINE);
   Serial.println(F("Starting setup...."));
   delay(2000);
   
@@ -92,10 +92,18 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
   
   Serial.println(F("Setting up sensors...."));
-  sensorSetup();
-  if (verifySensors()) {
-	  digitalWrite(LED_PIN, HIGH);
-  }
+  //sensorSetup();
+  initSensors();
+  printSensorCheck();
+  //if (verifySensors()) {
+	//  digitalWrite(LED_PIN, HIGH);
+  //}
+  Serial.println(F("Testing sensors (10 seconds)...."));
+  //testSensors(10,1000);
+  testSensors(-1,1000);
+  
+  Serial.println(F("DEBUG:"));
+  serialCharPrompt(F("Waiting for keypress"));
   
   Serial.println(F("Setting up SD...."));
   setupPodSD();

@@ -49,11 +49,11 @@ bool configChanged = false;
 String rx_str = "";
 
 // Alternative to F() macro wrapping so we can reuse these strings
-//const char INDENT2[] PROGMEM = "        ";
-//const char CONTINUE_PROMPT[] PROGMEM = "(hit any key to continue)";
+//static const char INDENT2[] PROGMEM = "        ";
+//static const char CONTINUE_PROMPT[] PROGMEM = "(hit any key to continue)";
 // PROGMEM not working correctly...
-const char INDENT2[] = "        ";
-const char CONTINUE_PROMPT[] = "(hit any key to continue)";
+static const char INDENT2[] = "        ";
+static const char CONTINUE_PROMPT[] = "(hit any key to continue)";
 
 
 //--------------------------------------------------------------------------------------------- [Intro and Setup]
