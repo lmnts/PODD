@@ -16,7 +16,7 @@
  */
  
 #include "pod_config.h"
-#include "pod_util.h"
+//#include "pod_util.h"
 #include "pod_serial.h"
 #include "pod_sensors.h"
 #include "pod_network.h"
@@ -25,11 +25,13 @@
 #include "EEPROM.h"
 
 
-struct StoreStruct {
-  char pod_version[5], server[61], devid[17], project [17], room[17], setupD[11], teardownD[11], lastUpdate[20], networkID[5];
-  char coord; // 
-  int uploadT,lightT,humidityT,tempT,soundT,co2T,pmT,coT;
-} storage = {
+//struct PodConfigStruct {
+//  char pod_version[5], server[61], devid[17], project [17], room[17], setupD[11], teardownD[11], lastUpdate[20], networkID[5];
+//  char coord; // 
+//  int uploadT,lightT,humidityT,tempT,soundT,co2T,pmT,coT;
+//};
+
+PodConfigStruct storage = {
   CONFIG_VERSION, // Maybe add field for software name before config version for more robust read/write
   server_default,
   DeviceID,
@@ -46,13 +48,6 @@ struct StoreStruct {
 bool configChanged = false;
 
 String rx_str = "";
-
-// Alternative to F() macro wrapping so we can reuse these strings
-//static const char INDENT2[] PROGMEM = "        ";
-//static const char CONTINUE_PROMPT[] PROGMEM = "(hit any key to continue)";
-// PROGMEM not working correctly...
-static const char INDENT2[] = "        ";
-static const char CONTINUE_PROMPT[] = "(hit any key to continue)";
 
 
 //--------------------------------------------------------------------------------------------- [Intro and Setup]
@@ -186,7 +181,7 @@ void savePodConfig() { // Save configuration to SD, EEPROM, and DB.
    configuration change, and notifies the user the setting with the
    given label has been changed.  len here is the length of arr. */
 void replaceSettingString(String s, char arr[], size_t len, String label) {
-  configChanged = true;
+  setPodConfigChanged();
   memset(arr,'\0',len);
   s.toCharArray(arr,len);
   if (!label.equals("")) {
@@ -198,11 +193,16 @@ void replaceSettingString(String s, char arr[], size_t len, String label) {
   }
 }
 
+/* Helper function for podConfig routine below:
+   Prompts the user to change the given sensor measurement interval,
+   flags a configuration change, and notifies the user the timing
+   has been changed.  The v argument should be a pointer to the
+   appropriate timing field of a PodConfigStruct. */
 void updateSensorTime(String label, int *v) {
   int i = serialIntegerPrompt(String("") + label,true,*v);
   if (i < 0) i = 0;
   if (i != *v) {
-    configChanged = true;
+    setPodConfigChanged();
     *v = i;
     if (*v > 0) {
       Serial.print(F("  Interval changed to "));
@@ -240,7 +240,7 @@ int podConfig() {
   if (!s.equals(storage.server)) {
     replaceSettingString(s,storage.server,sizeof(storage.server),F("Server"));
     /*
-    configChanged = true;
+    setPodConfigChanged();
     memset(storage.server,'\0',sizeof(storage.server));
     s.toCharArray(storage.server,sizeof(storage.server));
     Serial.print(F("  Server changed to \""));
@@ -253,7 +253,7 @@ int podConfig() {
   if (!s.equals(storage.project)) {
     replaceSettingString(s,storage.project,sizeof(storage.project),F("Project name"));
     /*
-    configChanged = true;
+    setPodConfigChanged();
     memset(storage.project,'\0',sizeof(storage.project));
     s.toCharArray(storage.project,sizeof(storage.project));
     Serial.print(F("  Project name changed to \""));
@@ -266,7 +266,7 @@ int podConfig() {
   if (!s.equals(storage.setupD)) {
     replaceSettingString(s,storage.setupD,sizeof(storage.setupD),F("Project setup date"));
     /*
-    configChanged = true;
+    setPodConfigChanged();
     memset(storage.setupD,'\0',sizeof(storage.setupD));
     s.toCharArray(storage.setupD,sizeof(storage.setupD));
     Serial.print(F("  Project setup date changed to \""));
@@ -279,7 +279,7 @@ int podConfig() {
   if (!s.equals(storage.teardownD)) {
     replaceSettingString(s,storage.teardownD,sizeof(storage.teardownD),F("Project teardown date"));
     /*
-    configChanged = true;
+    setPodConfigChanged();
     memset(storage.teardownD,'\0',sizeof(storage.teardownD));
     s.toCharArray(storage.teardownD,sizeof(storage.teardownD));
     Serial.print(F("  Project teardown date changed to \""));
@@ -292,7 +292,7 @@ int podConfig() {
   if (!s.equals(storage.devid)) {
     replaceSettingString(s,storage.devid,sizeof(storage.devid),F("Device ID"));
     /*
-    configChanged = true;
+    setPodConfigChanged();
     memset(storage.devid,'\0',sizeof(storage.devid));
     s.toCharArray(storage.devid,sizeof(storage.devid));
     Serial.print(F("  Device ID changed to \""));
@@ -305,7 +305,7 @@ int podConfig() {
   if (!s.equals(storage.room)) {
     replaceSettingString(s,storage.room,sizeof(storage.room),F("Room/location"));
     /*
-    configChanged = true;
+    setPodConfigChanged();
     memset(storage.room,'\0',sizeof(storage.room));
     s.toCharArray(storage.room,sizeof(storage.room));
     Serial.print(F("  Room/location changed to \""));
@@ -323,7 +323,7 @@ int podConfig() {
   if (!s.equals(storage.networkID)) {
     replaceSettingString(s,storage.networkID,sizeof(storage.networkID),F("Network ID"));
     / *
-    configChanged = true;
+    setPodConfigChanged();
     memset(storage.networkID,'\0',sizeof(storage.networkID));
     s.toCharArray(storage.networkID,sizeof(storage.networkID));
     Serial.print(F("  Network ID changed to \""));
@@ -336,7 +336,7 @@ int podConfig() {
   bool iscoord = getModeCoord();
   b = serialYesNoPrompt(F("Network coordinator (y/n)"),true,iscoord);
   if (b != iscoord) {
-    configChanged = true;
+    setPodConfigChanged();
     if (b) {
       storage.coord = 'Y';
       Serial.println(F("  This node now set to network coordinator."));
@@ -627,6 +627,10 @@ bool podConfigChanged() {
   return configChanged;
 }
 
+void setPodConfigChanged() {
+  configChanged = true;
+}
+
 void clearPodConfigChanged() {
   configChanged = false;
 }
@@ -698,6 +702,10 @@ void updateTimer(String sensor){
   Serial.println("The " + sensor + " sensor measurement interval is now " + timer + " seconds.");
 }
 
+PodConfigStruct& getPodConfig() {
+  return storage;
+}
+
 void loadPodConfig() {
   // To make sure there are settings, and they are YOURS!
   // If nothing is found it will use the default settings.
@@ -756,370 +764,6 @@ int getRateCO() {
 
 char * getNetID() {
   return storage.networkID;
-}
-
-
-// Interactive menus ---------------------------------------------------
-
-//----------------------------------------------
-/* For up to the given amount of time [ms], will provide (over the 
-   serial interface) regular prompts to press a key, in which case,
-   a menu-based interactive mode will be started.  Otherwise, the
-   PODD will start running in automatic mode. */
-void interactivePrompt(unsigned long timeout) {
-  Serial.println();
-
-  // Clear serial input
-  clearSerial();
-  
-  // Check for interaction
-  bool interactive = false;
-  for (int k = (timeout/1000); k > 0; k--) {
-    Serial.print(F("PODD will start in ")); 
-    Serial.print(k);
-    Serial.print(F(" seconds.  Press any key to enter interactive mode."));
-    Serial.println();
-    if (getSerialChar(1000) != (char)(-1)) {
-      interactive = true;
-      break;
-    }
-  }
-  
-  if (interactive) mainMenu();
-  
-  Serial.println(F("Now beginning automated mode."));
-}
-
-
-//----------------------------------------------
-/* Main menu for interactive mode.  Will continue to be shown until
-   an appropriate selection is made. */
-void mainMenu() {
-  
-  // Will continue offering main menu until appropriate response
-  // received.
-  while (true) {
-    // Clear terminal by printing a bunch of blank lines
-    for (int k = 0; k < 100; k++) Serial.println();
-    // Print menu options
-    Serial.println();
-    //Serial.println(F("======== PODD MENU ====================================================="));
-    //Serial.println(F("<<<<<<<< PODD MENU >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"));
-    Serial.println(F("========================================================================"));
-    Serial.println(F("|        PODD MENU                                                     |"));
-    Serial.println(F("========================================================================"));
-    Serial.println();
-    // Project-related settings
-    Serial.println(F("  (1) Project settings"));
-    showMenuProjectSettings();
-    /*
-    Serial.print(INDENT2);
-    Serial.print("Project: " + String(getProject()));
-    Serial.println();
-    Serial.print(INDENT2);
-    Serial.print("Server:  " + String(getServer()));
-    Serial.println();
-    */
-    // Node-related settings
-    Serial.println(F("  (2) Node settings"));
-    showMenuNodeSettings();
-    /*
-    Serial.print(INDENT2);
-    Serial.print("Device ID:   " + String(getDevID()));
-    Serial.println();
-    Serial.print(INDENT2);
-    Serial.print("Location:    " + String(getRoom()));
-    Serial.println();
-    Serial.print(INDENT2);
-    Serial.print("Coordinator: " + String(getModeCoord() ? "Yes" : "No"));
-    Serial.println();
-    */
-    // Sensor-related settings
-    //Serial.println(F("  (-) Sensor settings"));
-    Serial.println(F("  (3) Sensor timing"));
-    showMenuSensorTimingSettings();
-    Serial.println(F("  (4) Sensor testing"));
-    // RTC time/settings
-    Serial.println(F("  (C) Clock settings"));
-    showMenuClockSettings();
-    /*
-    Serial.println(F("  (T) RTC"));
-    Serial.print(INDENT2);
-    Serial.print(F("Current time: "));
-    Serial.print(formatDateTime());
-    Serial.println();
-    //Serial.print(  F("  (T) RTC time ["));
-    //Serial.print(formatDateTime());
-    //Serial.print(F("]"));
-    //Serial.println();
-    */
-    // Show compilation info
-    Serial.println(F("  (I) Compilation info"));
-    //Serial.println(F("  "));
-    Serial.println();
-    // Enter old configuration menu
-    Serial.println(F("  (O) Old configuration menu"));
-    Serial.println();
-    // Leave menu and enter automatic mode
-    Serial.println(F("  (Q) Quit interactive mode"));
-    Serial.println();
-    //Serial.println(F("                        ------------------------                        "));
-    Serial.println(F("        ----------------                                                "));
-    //Serial.println(F("========================================================================"));
-    //Serial.println(F(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"));
-
-    // Get selection
-    clearSerial();
-    Serial.println();
-    Serial.print("Enter the item to view/configure: ");
-    char c = getSerialChar(-1);
-    Serial.println(c);  // Serial Monitor does not echo inputs
-    Serial.println();
-
-    // Process selection
-    // We commit any configuration changes when leaving
-    // the menu or going to an option that we might not
-    // return from (e.g. sensor testing).
-    bool showContinuePrompt = true;
-    switch (c) {
-      case '1':
-        configureProjectSettings();
-        break;
-      case '2':
-        configureNodeSettings();
-        break;
-      case '3':
-        configureSensorTimingSettings();
-        break;
-      case '4':
-        Serial.println(F("<option not yet implemented>"));
-        break;
-      case '5':
-        Serial.println(F("<option not yet implemented>"));
-        break;
-      case 'C':
-      case 'c':
-        Serial.println(F("<option not yet implemented>"));
-        break;
-      case 'I':
-      case 'i':
-        Serial.println(F("  Firmware version:    " CONFIG_VERSION));
-        printCompilationInfo("  ","");
-        Serial.println();
-        break;
-      case 'O':
-      case 'o':
-        if (podConfigChanged()) savePodConfig();
-        podIntro();
-        //showContinuePrompt = false;
-        break;
-      case 'Q':
-      case 'q':
-        if (podConfigChanged()) savePodConfig();
-        showContinuePrompt = false;
-        return;
-        break;
-      default:
-        Serial.println(F("Invalid option.  Select an option from the list."));
-        break;
-    }
-
-    if (showContinuePrompt) {
-      //Serial.println();
-      Serial.println(CONTINUE_PROMPT);
-      getSerialChar(-1);
-    }
-    
-    Serial.println();
-  }
-}
-
-
-//----------------------------------------------
-/* Prints to serial various project settings.
-   Intended to be used just below menu's project settings entry. */
-void showMenuProjectSettings() {
-  Serial.print(INDENT2);
-  Serial.print("Project: " + String(getProject()));
-  Serial.println();
-  Serial.print(INDENT2);
-  Serial.print("Server:  " + String(getServer()));
-  Serial.println();
-}
-
-
-//----------------------------------------------
-/* Prints to serial various node settings.
-   Intended to be used just below menu's node settings entry. */
-void showMenuNodeSettings() {
-  Serial.print(INDENT2);
-  Serial.print("Device ID:   " + String(getDevID()));
-  Serial.println();
-  Serial.print(INDENT2);
-  Serial.print("Location:    " + String(getRoom()));
-  Serial.println();
-  Serial.print(INDENT2);
-  Serial.print("Coordinator: " + String(getModeCoord() ? "Yes" : "No"));
-  Serial.println();
-}
-
-
-//----------------------------------------------
-/* Prints to serial a single sensor timing setting.
-   Intended to be used just below menu's sensor timing settings entry. */
-void showMenuSensorTimingEntry(String s, int v) {
-  //return String(INDENT2) + s + " " + ((v > 0) ? (String(v) + " s") : "(disabled)");
-  Serial.print(INDENT2);
-  Serial.print(s + F(": "));
-  for (size_t k = 20; k > s.length(); k--) Serial.print(' ');
-  if (v > 0) {
-    char buff[8];
-    sprintf(buff,"%5d s",v);
-    Serial.print(buff);
-  } else {
-    Serial.print(F("(disabled)"));
-  }
-  Serial.println();
-}
-
-
-//----------------------------------------------
-/* Prints to serial various sensor timing settings.
-   Intended to be used just below menu's sensor timing settings entry. */
-void showMenuSensorTimingSettings() {
-  showMenuSensorTimingEntry(F("Temperature/humidity"),(storage.humidityT));
-  showMenuSensorTimingEntry(F("Radiant temperature"),(storage.tempT));
-  showMenuSensorTimingEntry(F("Light"),(storage.lightT));
-  showMenuSensorTimingEntry(F("Sound level"),(storage.soundT));
-  showMenuSensorTimingEntry(F("Particulate matter"),(storage.pmT));
-  showMenuSensorTimingEntry(F("Carbon dioxide"),(storage.co2T));
-  showMenuSensorTimingEntry(F("Carbon monoxide"),(storage.coT));
-  //showMenuSensorTimingEntry(F("Data upload interval"),(storage.uploadT));
-}
-
-
-//----------------------------------------------
-/* Prints to serial various clock settings.
-   Intended to be used just below menu's clock settings entry. */
-void showMenuClockSettings() {
-  Serial.print(INDENT2);
-  Serial.print(F("Current time: "));
-  Serial.print(formatDateTime());
-  Serial.println();
-}
-
-
-//----------------------------------------------
-/* Sensor setup/config/testing menu.  Will continue to be shown until
-   an appropriate selection is made. */
-void sensorMenu() {
-}
-
-
-// Interactive configuration -------------------------------------------
-
-//----------------------------------------------
-/* Prompt the user to update project settings over the serial interface. */
-void configureProjectSettings() {
-  String s;
-  
-  Serial.println();
-  Serial.println(F("Current settings are shown in square brackets."));
-  Serial.println(F("Press enter to keep the current setting."));
-  Serial.println();
-
-  s = serialStringPrompt(F("Upload server"),storage.server);
-  if (!s.equals(storage.server)) {
-    replaceSettingString(s,storage.server,sizeof(storage.server),F("Server"));
-  }
-  
-  s = serialStringPrompt(F("Project name (max 16 characters)"),storage.project);
-  if (!s.equals(storage.project)) {
-    replaceSettingString(s,storage.project,sizeof(storage.project),F("Project name"));
-  }
-  
-  s = serialStringPrompt(F("Project setup date (YYY-MM-DD)"),storage.setupD);
-  if (!s.equals(storage.setupD)) {
-    replaceSettingString(s,storage.setupD,sizeof(storage.setupD),F("Project setup date"));
-  }
-  
-  s = serialStringPrompt(F("Project teardown date (YYY-MM-DD)"),storage.teardownD);
-  if (!s.equals(storage.teardownD)) {
-    replaceSettingString(s,storage.teardownD,sizeof(storage.teardownD),F("Project teardown date"));
-  }
-  
-  // Use XBee Grove dev board + XCTU exclusively to configure
-  // XBee network, aside from coordinator mode: current firmware
-  // not set up to provide access to many of the useful settings
-  // and it is too easy to misconfigure the XBee. 
-  /*
-  s = serialStringPrompt(F("Project network ID (hexadecimal from 0000 to 07FFF)"),storage.networkID);
-  if (!s.equals(storage.networkID)) {
-    replaceSettingString(s,storage.networkID,sizeof(storage.networkID),F("Network ID"));
-  }
-  */
-  
-  Serial.println();
-}
-
-
-//----------------------------------------------
-/* Prompt the user to update node settings over the serial interface. */
-void configureNodeSettings() {
-  bool b;
-  String s;
-  
-  Serial.println();
-  Serial.println(F("Current settings are shown in square brackets."));
-  Serial.println(F("Press enter to keep the current setting."));
-  Serial.println();
-
-  s = serialStringPrompt(F("Device ID (max 16 characters)"),storage.devid);
-  if (!s.equals(storage.devid)) {
-    replaceSettingString(s,storage.devid,sizeof(storage.devid),F("Device ID"));
-  }
-  
-  s = serialStringPrompt(F("Room/location (max 16 characters)"),storage.room);
-  if (!s.equals(storage.room)) {
-    replaceSettingString(s,storage.room,sizeof(storage.room),F("Room/location"));
-  }
-
-  bool iscoord = getModeCoord();
-  b = serialYesNoPrompt(F("Network coordinator (y/n)"),true,iscoord);
-  if (b != iscoord) {
-    configChanged = true;
-    if (b) {
-      storage.coord = 'Y';
-      Serial.println(F("  This node now set to network coordinator."));
-    } else {
-      storage.coord = 'N';
-      Serial.println(F("  This node is no longer the network coordinator."));
-    }
-  }
-  
-  Serial.println();
-}
-
-
-/* Prompt the user to update sensor measurement timing settings over the
-   serial interface. */
-void configureSensorTimingSettings() {
-  Serial.println();
-  Serial.println(F("Enter the number of seconds between measurements for each sensor,"));
-  Serial.println(F("or '0' to disable the sensor.  Current settings are shown in"));
-  Serial.println(F("square brackets (press enter to keep the current setting)."));
-  Serial.println();
-  
-  updateSensorTime(F("Temperature/humidity"),&(storage.humidityT));
-  updateSensorTime(F("Radiant temperature"),&(storage.tempT));
-  updateSensorTime(F("Light"),&(storage.lightT));
-  updateSensorTime(F("Sound level"),&(storage.soundT));
-  updateSensorTime(F("Particulate matter"),&(storage.pmT));
-  updateSensorTime(F("Carbon dioxide"),&(storage.co2T));
-  updateSensorTime(F("Carbon monoxide"),&(storage.coT));
-  //updateSensorTime(F("Data upload interval"),&(storage.uploadT));
-  
-  Serial.println();
 }
 
 

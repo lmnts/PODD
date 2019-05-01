@@ -12,7 +12,7 @@
 
 #include "Arduino.h"
 
-#include <limits.h>
+//#include <limits.h>
 
 //--------------------------------------------------------------------------------------------- [Intro and Setup]
 
@@ -36,14 +36,25 @@
 #define update_default "2017-04-23 12:57:00"
 #define network_default "ABCD"
 
-void podIntro();
+struct PodConfigStruct {
+  char pod_version[5], server[61], devid[17], project [17], room[17], setupD[11], teardownD[11], lastUpdate[20], networkID[5];
+  char coord; // 
+  int uploadT,lightT,humidityT,tempT,soundT,co2T,pmT,coT;
+};
 
+
+void podIntro();
 
 int podConfig();
 bool podConfigChanged();
+void setPodConfigChanged();
 void clearPodConfigChanged();
 void loadPodConfig();
 void savePodConfig();
+PodConfigStruct& getPodConfig();
+
+void replaceSettingString(String s, char arr[], size_t len, String label);
+void updateSensorTime(String label, int *v);
 
 void updateTimer(String sensor);
 
@@ -63,21 +74,5 @@ int getRateSound();
 int getRateCO2();
 int getRatePM();
 int getRateCO();
-
-void configureProjectSettings();
-void configureNodeSettings();
-void configureSensorTimingSettings();
-
-void interactivePrompt(unsigned long timeout=30000);
-void mainMenu();
-void showMenuProjectSettings();
-void showMenuNodeSettings();
-void showMenuSensorTimingEntry(String s, int v);
-void showMenuSensorTimingSettings();
-void showMenuClockSettings();
-
-void clockMenu();
-void configMenu();
-void sensorMenu();
 
 #endif

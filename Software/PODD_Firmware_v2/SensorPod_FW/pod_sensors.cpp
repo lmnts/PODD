@@ -468,6 +468,9 @@ void testSensors(unsigned long cycles, unsigned long sampleInterval) {
   Serial.println(F("--------------"));
   Serial.println();
   
+  Serial.println(F("Press any key to end sensor testing."));
+  Serial.println();
+  
   // Ensure sensors are initialized
   if (!sensorsInitialized) {
     Serial.println(F("Initializing sensors...."));

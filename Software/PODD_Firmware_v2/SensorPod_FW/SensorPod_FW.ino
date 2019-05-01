@@ -36,6 +36,7 @@
 #include "pod_util.h"
 #include "pod_serial.h"
 #include "pod_config.h"
+#include "pod_menu.h"
 #include "pod_sensors.h"
 #include "pod_network.h"
 #include "pod_logging.h"
@@ -96,15 +97,12 @@ void setup() {
   //sensorSetup();
   initSensors();
   printSensorCheck();
-  //if (verifySensors()) {
-	//  digitalWrite(LED_PIN, HIGH);
-  //}
   Serial.println(F("Testing sensors (10 seconds)...."));
-  //testSensors(10,1000);
-  testSensors(-1,1000);
+  testSensors(10,1000);
+  //testSensors(-1,1000);
   
-  Serial.println(F("DEBUG:"));
-  serialCharPrompt(F("Waiting for keypress"));
+  //Serial.println(F("DEBUG:"));
+  //serialCharPrompt(F("Waiting for keypress"));
   
   Serial.println(F("Setting up SD...."));
   setupPodSD();

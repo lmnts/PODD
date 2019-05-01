@@ -5,10 +5,10 @@
     https://github.com/lmnts/PODD
 
   CONTRIBUTORS:
-    Chris Savage (2018)
+    Chris Savage (2019)
 
   COPYRIGHT/LICENSE:
-  Copyright (c) 2018 LMN Architects
+  Copyright (c) 2019 LMN Architects
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU Affero General Public License as
