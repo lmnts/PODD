@@ -22,16 +22,19 @@
 #define PACKET_END_TOKEN '\x03'
 
 void initXBee();
+void setXBeeCoordinatorMode(const bool coord);
 void startXBee();
 void readXBeeISR();
 void readXBee();
 void sendXBee(const String packet);
+void broadcastXBee(const String packet);
 bool holdXBeeBuffer();
 void releaseXBeeBuffer();
 void resetXBeeBuffer();
 void cleanXBeeBuffer(const bool cleanStart=true, const bool cleanEnd=true);
 String getXBeeBufferPacket();
 void processXBee();
+bool submitXBeeCommand(const String cmd);
 
 void xbeeGetMac(byte * macL, uint8_t max_mac_len);
 void xbeeConfig();
@@ -53,14 +56,18 @@ void ethernetSetup();
 bool ethernetBegin();
 bool ethernetOnline();
 void ethernetMaintain();
-String formatTime();
-String formatDate();
+//String formatTime();
+//String formatDate();
 void saveReading(String lstr, String rstr, String atstr, String gtstr, String sstr, String c2str, String p1str, String p2str, String cstr);
 void postReading(String DID, String ST, String R, String DT);
 void updateRate(String DID, String ST, String R, String DT);
 void updateConfig(String DID, String Location, String Coordinator, String Project, String Rate, String Setup, String Teardown, String Datetime, String NetID);
 byte postPage(const char* domainBuffer, int thisPort, const char* page, const char* thisData);
-void getTimeFromWeb();
-void sendNTPpacket(const char* address);
+
+//void getTimeFromWeb();
+//void sendNTPpacket(const char* address);
+void updateClockFromNTP();
+void broadcastClock();
+void processClockPacket(const String packet);
 
 #endif

@@ -69,7 +69,7 @@ bool serialTrueFalsePrompt(String prompt, bool reprompt, bool default0);
 bool serialBooleanPrompt(String prompt, bool reprompt, bool default0);
 bool serialBooleanPrompt(String prompt, bool reprompt, bool default0, char tchar, char fchar);
 int serialIntegerPrompt(String prompt, bool reprompt, int default0=INT_MIN);
-int serialLongPrompt(String prompt, bool reprompt, long default0=LONG_MIN);
+long serialLongPrompt(String prompt, bool reprompt, long default0=LONG_MIN);
 float serialFloatPrompt(String prompt, bool reprompt, float default0=NAN);
 
 

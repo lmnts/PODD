@@ -28,6 +28,7 @@
 #include "pod_menu.h"
 #include "pod_util.h"
 #include "pod_serial.h"
+#include "pod_clock.h"
 #include "pod_config.h"
 #include "pod_logging.h"
 #include "pod_sensors.h"
@@ -155,12 +156,12 @@ void mainMenu() {
         sensorMenu();
         showContinuePrompt = false;
         break;
-      case '5':
-        Serial.println(F("<option not yet implemented>"));
-        break;
+      //case '5':
+      //  Serial.println(F("<option not yet implemented>"));
+      //  break;
       case 'C':
       case 'c':
-        Serial.println(F("<option not yet implemented>"));
+        configureClockSettings();
         break;
       case 'I':
       case 'i':
@@ -263,9 +264,23 @@ void showMenuSensorTimingSettings() {
 /* Prints to serial various clock settings.
    Intended to be used just below menu's clock settings entry. */
 void showMenuClockSettings() {
+  // Old clock routines
+  //Serial.print((FType)MENU_INDENT2);
+  //Serial.print(F("Current time: "));
+  //Serial.print(formatDateTime());
+  //Serial.println();
+  time_t utc = getUTC();
   Serial.print((FType)MENU_INDENT2);
-  Serial.print(F("Current time: "));
-  Serial.print(formatDateTime());
+  Serial.print(F("Universal time: "));
+  Serial.print(getUTCDateTimeString(utc));
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Local time:     "));
+  Serial.print(getLocalDateTimeString(utc));
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Unix timestamp:   "));
+  Serial.print(utc);
   Serial.println();
 }
 
@@ -371,6 +386,89 @@ void configureSensorTimingSettings() {
   updateSensorTime(F("Carbon dioxide"),&(getPodConfig().co2T));
   updateSensorTime(F("Carbon monoxide"),&(getPodConfig().coT));
   //updateSensorTime(F("Data upload interval"),&(getPodConfig().uploadT));
+  
+  Serial.println();
+}
+
+
+//------------------------------------------------------------------------------
+/* Prompt the user to update clock settings over the serial interface. */
+void configureClockSettings() {
+  bool b;
+  
+  // Time zone settings
+  String stz = getStandardTimezoneLabel();
+  String dtz = getDaylightSavingTimezoneLabel();
+  Serial.println();
+  Serial.println(F("Current timezone:"));
+  Serial.print(F("    standard time:        "));
+  Serial.println(stz);
+  Serial.print(F("    daylight saving time: "));
+  Serial.println(dtz);
+  b = serialYesNoPrompt(F("Change timezone (y/n)?"),true,false);
+  if (b) {
+    Serial.println();
+    Serial.println(F("Enter the three-character label for the standard and daylight saving"));
+    Serial.println(F("time zone.  If daylight saving is not observed, use the same label"));
+    Serial.println(F("for both periods.  Timezones are currently limited to 'EST', 'EDT',"));
+    Serial.println(F("'CST', 'CDT', 'MST', 'MDT', 'PST', 'PDT', and 'UTC'.  Unknown labels"));
+    Serial.println(F("will be set to UTC."));
+    Serial.println();
+    String stz0 = serialStringPrompt("Standard time",stz);
+    String dtz0 = serialStringPrompt("Daylight saving time",dtz);
+    if (!stz0.equals(stz) || !dtz0.equals(dtz)) {
+      setTimezone(stz0,dtz0);
+      // Get new timezone labels; may differ from stz0/dtz0 if those
+      // contained unknown timezone labels.
+      stz = getStandardTimezoneLabel();
+      dtz = getDaylightSavingTimezoneLabel();
+      Serial.println();
+      Serial.println(F("New timezone:"));
+      Serial.print(F("    standard time:        "));
+      Serial.println(stz);
+      Serial.print(F("    daylight saving time: "));
+      Serial.println(dtz);
+    }
+  }
+
+  // Clock settings
+  Serial.println();
+  time_t utc = getUTC();
+  Serial.println(F("Current time:"));
+  Serial.print(F("    universal time: "));
+  Serial.println(getUTCDateTimeString(utc));
+  Serial.print(F("    local time:     "));
+  Serial.println(getLocalDateTimeString(utc));
+  Serial.print(F("    unix timestamp:   "));
+  Serial.println(utc);
+  b = serialYesNoPrompt(F("Change current time (y/n)?"),true,false);
+  if (b) {
+    Serial.println();
+    Serial.println(F("Enter the current time as a unix timestamp (seconds since 00:00:00"));
+    Serial.println(F("on 1970-01-01 UTC).  The current unix time can be found on various"));
+    Serial.println(F("websites by searching for \"unix time\".  Note the unix timestamp is"));
+    Serial.println(F("defined to be relative to UTC, not the local timezone.  The timestamp"));
+    Serial.println(F("will be applied at the point in time at which it is submitted."));
+    Serial.println();
+    time_t utc0 = serialLongPrompt(F("New unix timestamp"),true,utc);
+    // Require reasonably recent timestamp
+    if (utc0 < 1000000000ul) {
+      Serial.println(F("Invalid timestamp: must be greater than 1000000000 (2001-09-09)."));
+      Serial.println(F(""));
+    // Do nothing if timestamp did not change
+    } else if (utc0 != utc) {
+      setUTC(utc0);
+      Serial.println();
+      utc = getUTC();
+      Serial.println(F("Current time:"));
+      Serial.print(F("    universal time: "));
+      Serial.println(getUTCDateTimeString(utc));
+      Serial.print(F("    local time:     "));
+      Serial.println(getLocalDateTimeString(utc));
+      Serial.print(F("    unix timestamp:   "));
+      Serial.println(utc);
+    }
+  }
   
   Serial.println();
 }
@@ -489,7 +587,7 @@ void sensorMenuCalibrateCO2Sensor() {
   Serial.println(F("ambient CO2 level is known, either from another (calibrated) CO2 meter or because"));
   Serial.println(F("the PODD is outdoors or in a well-ventilated area: outdoor air has a CO2"));
   Serial.println(F("concentration of 400-450 ppm (you might find a weather/CO2 station online"));
-  Serial.println(F("that provides local CO2 levels)."));
+  Serial.println(F("that provides local outdoor CO2 levels)."));
   Serial.println(F(""));
   bool b = serialYesNoPrompt(F("Proceed with calibration (y/n)?"),true,false);
   if (!b) return;

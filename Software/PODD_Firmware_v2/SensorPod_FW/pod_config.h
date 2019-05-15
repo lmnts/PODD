@@ -12,13 +12,12 @@
 
 #include "Arduino.h"
 
-//#include <limits.h>
 
 //--------------------------------------------------------------------------------------------- [Intro and Setup]
 
 #define setupTimeout 60000 // 60000ms = 1 min
 #define CONFIG_VERSION "demo" // contains extra "\0" character on end.
-#define CONFIG_START 32
+//#define CONFIG_START 32
 
 #define lightT_default 60
 #define humidityT_default 60
@@ -33,7 +32,7 @@
 #define setup_default "1900-01-01"
 #define teardown_default "1970-01-01"
 #define upload_default 3600
-#define update_default "2017-04-23 12:57:00"
+#define update_default "1970-01-01 00:00:00"
 #define network_default "ABCD"
 
 struct PodConfigStruct {

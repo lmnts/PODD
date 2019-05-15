@@ -1,17 +1,18 @@
 
 /*
- * pod_network.cpp  
- * 2017 - Nick Turner and Morgan Redfield
- * Licensed under the AGPLv3. For full license see LICENSE.md 
- * Copyright (c) 2017 LMN Architects, LLC
- * 
- * Handle networking via Ethernet and XBee.
- */
+   pod_network.cpp
+   2017 - Nick Turner and Morgan Redfield
+   Licensed under the AGPLv3. For full license see LICENSE.md
+   Copyright (c) 2017 LMN Architects, LLC
+
+   Handle networking via Ethernet and XBee.
+*/
 
 #include "pod_network.h"
 #include "pod_config.h"
 #include "pod_logging.h"
 #include "pod_util.h"
+#include "pod_clock.h"
 
 #include <SPI.h>
 #include <TimerOne.h>
@@ -47,16 +48,16 @@ volatile bool xbeeBufferHold = false;
 String set1;
 String set2;
 #define NETID_LEN 4
-byte network[] = {0xA,0xB,0xC,0xD};
+byte network[] = {0xA, 0xB, 0xC, 0xD};
 
 // Ethernet connection settings
 #define MAC_LEN 6
 byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}; // MAC address can be anything, as long as it is unique on network
 //char timeServer[] =  "time.nist.gov"; // government NTP server
-#define timeServer "time.nist.gov"
+//#define timeServer "time.nist.gov"
 #define localPort 8888
-#define NTP_PACKET_SIZE 48
-byte packetBuffer[NTP_PACKET_SIZE];
+//#define NTP_PACKET_SIZE 48
+//byte packetBuffer[NTP_PACKET_SIZE];
 EthernetUDP Udp;
 #define serverPort 80
 char pageName[] = "/LMNSensePod.php"; // Name of submission page. Log into EC2 Server and navigate to /var/www/html to view
@@ -72,6 +73,12 @@ unsigned long lastEthernetBegin = 0;
 #define WIZ812MJ_RESET_PIN 9 // WIZnet reset pin
 bool online = false;
 
+// NTP settings
+#define NTP_SERVER "time.nist.gov"
+#define NTP_PORT 123
+#define NTP_PACKET_SIZE 48
+
+
 //--------------------------------------------------------------------------------------------- [XBee Management]
 
 /* Initialize the XBee serial interface and buffering mechanism.
@@ -85,11 +92,84 @@ void initXBee() {
   // our own buffer for received data to overcome limitations in
   // the Arduino receive buffer....
   xbee.begin(9600);
-  
+
   // Initialize ring buffer for data that came across the XBee
   // network.
   xbeeBufferHold = true;
   resetXBeeBuffer();
+}
+
+
+/* Sends the given command to the XBee, indicating if the command
+   was successfully sent.  XBee must already be in coordinator mode.
+   Do not include trailing '\r'. */
+bool submitXBeeCommand(const String cmd) {
+  // Clear incoming buffer
+  while (xbee.available()) xbee.read();
+  // Submit command
+  xbee.print(cmd + "\r");
+  // Wait for response, which should be "OK\r" or "ERROR\r"
+  unsigned long t0 = millis();
+  while (millis() - t0 < 1000) {
+    if (xbee.available() >= 3) break;
+    delay(10);
+  }
+  if (!xbee.available()) return false;
+  // In case last few characters have not yet arrived...
+  delay(5);
+  char buff[7];
+  size_t len = 0;
+  while (xbee.available()) {
+    buff[len++] = xbee.read();
+    if (len > 5) break;
+  }
+  buff[len] = '\0';
+  // Clear remaining incoming buffer
+  while (xbee.available()) xbee.read();
+  // Check response
+  String response(buff);
+  if (response.equals(F("OK\r"))) return true;
+  if (response.equals(F("ERROR\r"))) return false;
+  // Missing/invalid/unknown response
+  return false;
+}
+
+
+/* Sets the XBee as coordinator (true) or drone (false).
+   The destination address is set to the broadcast or
+   coordinator address, respectively. */
+void setXBeeCoordinatorMode(const bool coord) {
+  // XBee responds with "OK\r" or "ERROR\n" after each sent
+  // command.
+  
+  // Put XBee in command mode
+  delay(1100);
+  xbee.print(F("+++"));
+  delay(1100);
+  while (xbee.available()) xbee.read();
+
+  // Settings for coordinator
+  if (coord) {
+    // Set as coordinator
+    submitXBeeCommand(F("ATCE 1"));
+    // Set destination to broadcast address (0x000000000000FFFF).
+    // Note command string omits '0x'.
+    submitXBeeCommand(F("DH 00000000"));
+    submitXBeeCommand(F("DL 0000FFFF"));
+
+  // Settings for drone
+  } else {
+    // Set as coordinator
+    submitXBeeCommand(F("ATCE 0"));
+    // Set destination to coordinator address (0x0000000000000000).
+    // Note command string omits '0x'.
+    xbee.print(F("DH 00000000"));
+    xbee.print(F("DL 00000000"));
+  }
+  
+  // Save new configuration and exit command mode (applies changes)
+  submitXBeeCommand(F("ATWR"));
+  submitXBeeCommand(F("ATCN"));
 }
 
 
@@ -106,7 +186,7 @@ void startXBee() {
   resetXBeeBuffer();
   xbeeBufferHold = false;
   SREG = oldSREG;  // Restore interrupt status
-  
+
   // Use timer-based, interrupt-driven function calls to
   // ensure data is getting pulled from the Arduino buffer
   // before it can fill.
@@ -144,12 +224,12 @@ void readXBee() {
   // This can considerably slow this ISR-called routine
   // and use of Serial output in an ISR can introduce
   // unintended behaviour.
-  #if defined(XBEE_DEBUG)
+#if defined(XBEE_DEBUG)
   if (!xbee.available()) return;
   Serial.print(F("readXBee ["));
   Serial.print(millis());
   Serial.print("]: ");
-  #endif
+#endif
   // Will extract all currently available data
   while (xbee.available()) {
     // If buffer overruns, ignore incoming data.
@@ -160,9 +240,9 @@ void readXBee() {
       // Teensy serial: can clear buffer all at once
       xbeeBufferOverrun += xbee.available();
       xbee.clear();
-      #if defined(XBEE_DEBUG)
+#if defined(XBEE_DEBUG)
       Serial.println(F("(overflow)"));
-      #endif
+#endif
       return;
     } else {
       xbeeBuffer[xbeeBufferHead] = xbee.read();
@@ -171,9 +251,9 @@ void readXBee() {
       xbeeBufferElements++;
     }
   }
-  #if defined(XBEE_DEBUG)
+#if defined(XBEE_DEBUG)
   Serial.println();
-  #endif
+#endif
 }
 
 
@@ -191,18 +271,18 @@ void sendXBee(const String packet)
   //xbee.write(PACKET_START_TOKEN);
   //xbee.write(packet);
   //xbee.write(PACKET_END_TOKEN);
-  
+
   // Send payload to serial all at once in the hopes that the
   // XBee will place it it in a single network packet.
   // By default, data in XBee input buffer is sent when packet
   // is full or 3 UART character transmission times have passed
   // without activity.
   // Note we omit null-termination character.
-  size_t bufLength = packet.length()+2;
+  size_t bufLength = packet.length() + 2;
   char buf[bufLength];
-  strcpy(&buf[1],packet.c_str());
+  strcpy(&buf[1], packet.c_str());
   buf[0] = PACKET_START_TOKEN;
-  buf[bufLength-1] = PACKET_END_TOKEN;
+  buf[bufLength - 1] = PACKET_END_TOKEN;
   xbee.write(buf);
 
   // Hardware serial interface is operated through ISRs.
@@ -268,7 +348,7 @@ void cleanXBeeBuffer(const bool cleanStart, const bool cleanEnd) {
   // Prevent ISR from modifying buffer during this routine.
   // Will return to previous hold state.
   bool wasHeld = holdXBeeBuffer();
-  
+
   // Empty buffer
   if (xbeeBufferElements == 0) {
     //xbeeBufferHead = 0;
@@ -296,11 +376,11 @@ void cleanXBeeBuffer(const bool cleanStart, const bool cleanEnd) {
    or an empty string if no packet is available. */
 String getXBeeBufferPacket() {
   const String EMPTY_STRING = "";
-  
+
   // Ensure buffer is not modified while in this routine.
   // At return, we will return held state back to original state.
   bool wasHeld = holdXBeeBuffer();
-  
+
   //noInterrupts();
   //const bool hold = xbeeBufferHold;
   //if (!hold) xBeeBufferHold = true;
@@ -311,7 +391,7 @@ String getXBeeBufferPacket() {
     if (!wasHeld) releaseXBeeBuffer();
     return EMPTY_STRING;
   }
-  
+
   // Loop over buffer until we find a valid packet
   // or we reach the end.
   while (1) {
@@ -345,10 +425,10 @@ String getXBeeBufferPacket() {
     // Now extract packet characters, excluding start & end tokens
     const size_t packetBufSize = (endLoc - startLoc) % XBEE_BUFFER_SIZE;
     char packetBuf[packetBufSize];
-    for (size_t pos = 0; pos < packetBufSize-1; pos++) {
-      packetBuf[pos] = xbeeBuffer[(startLoc+1+pos) % XBEE_BUFFER_SIZE];
+    for (size_t pos = 0; pos < packetBufSize - 1; pos++) {
+      packetBuf[pos] = xbeeBuffer[(startLoc + 1 + pos) % XBEE_BUFFER_SIZE];
     }
-    packetBuf[packetBufSize-1] = '\0';
+    packetBuf[packetBufSize - 1] = '\0';
     xbeeBufferElements = (xbeeBufferHead - endLoc + 1) % XBEE_BUFFER_SIZE;
     if (!wasHeld) releaseXBeeBuffer();
     return packetBuf;
@@ -366,11 +446,11 @@ String getXBeeBufferPacket() {
 void processXBee() {
   // Prevent buffer from being altered by ISR
   holdXBeeBuffer();
-  
+
   // Not necessary if an ISR is used to pull data from the
   // Arduino serial buffer, but it doesn't hurt.
   readXBee();
-  
+
   // If there was a buffer overrun, remove any incomplete packet
   // at the end.
   if (xbeeBufferOverrun > 0) {
@@ -378,7 +458,7 @@ void processXBee() {
     Serial.print(xbeeBufferOverrun);
     Serial.println(" bytes.  Some data lost.");
     Serial.flush();
-    cleanXBeeBuffer(true,true);
+    cleanXBeeBuffer(true, true);
     xbeeBufferOverrun = 0;
   }
 
@@ -391,20 +471,23 @@ void processXBee() {
   // Cycle over packets until we find a valid one.
   String packet;
   bool uploaded = false;
-  while((packet = getXBeeBufferPacket()).length() > 0) {
+  while ((packet = getXBeeBufferPacket()).length() > 0) {
     Serial.print(F("XBee packet: "));
     Serial.println(packet);
     Serial.flush();
-    switch(packet.charAt(0)) {
+    switch (packet.charAt(0)) {
       case 'V':
+        if (!getModeCoord()) break;
         xbeeReading(packet);
         uploaded = true;
         break;
       case 'R':
+        if (!getModeCoord()) break;
         xbeeRate(packet);
         uploaded = true;
         break;
       case 'S':
+        if (!getModeCoord()) break;
         set1 = packet;
         if (set1.length() > 0 && set2.length() > 0) {
           xbeeSettings(set1, set2);
@@ -414,6 +497,7 @@ void processXBee() {
         }
         break;
       case 'T':
+        if (!getModeCoord()) break;
         set2 = packet;
         if (set1.length() > 0 && set2.length() > 0) {
           xbeeSettings(set1, set2);
@@ -421,6 +505,9 @@ void processXBee() {
           set1 = "";
           set2 = "";
         }
+        break;
+      case 'C':
+        if (!getModeCoord()) processClockPacket(packet);
         break;
       // Invalid packet: do nothing
       default:
@@ -447,10 +534,10 @@ void xbeeConfig() {
   // Use XBee Grove dev board + XCTU exclusively to configure
   // XBee network, aside from coordinator mode: current firmware
   // not set up to provide access to many of the useful settings
-  // and it is too easy to misconfigure the XBee. 
+  // and it is too easy to misconfigure the XBee.
   //xbeeUpdateSetting("CE","0"); // Set device to drone before entering new network.
   //xbeeUpdateSetting("ID", getNetID());
-  
+
   delay(1100);
   xbee.print("+++");
   delay(1100);
@@ -463,12 +550,12 @@ void xbeeConfig() {
   Serial.print((char)xbee.read());
   xbee.print("ATCN\r");
   delay(100);
-  while(xbee.available())
+  while (xbee.available())
     xbee.read();
 
 }
 
-void xbeeGetMac(byte * macL, uint8_t max_mac_len){
+void xbeeGetMac(byte * macL, uint8_t max_mac_len) {
   if (max_mac_len < 6) {
     Serial.println(F("mac array is too short"));
     return;
@@ -478,28 +565,28 @@ void xbeeGetMac(byte * macL, uint8_t max_mac_len){
   xbeeCommandMode();
   //Serial.println();
   xbee.print("ATSL\r");
-  xbee.readBytes(macL,6);
+  xbee.readBytes(macL, 6);
   //xbee.print("ATCN\r");
   delay(100);
-  while(xbee.available())
+  while (xbee.available())
     //Serial.print((char)xbee.read());
     xbee.read();
   //Serial.println();
   //for(int x = 0; x<sizeof(macL);x++)
-    //Serial.println(macL[x]);
+  //Serial.println(macL[x]);
   //return macL;
 }
 
-void xbeeGetNetwork(byte * netID, uint8_t max_net_len){
+void xbeeGetNetwork(byte * netID, uint8_t max_net_len) {
   //Serial.println(sizeof(netID));
-  if (max_net_len < 4){
+  if (max_net_len < 4) {
     Serial.println(F("Network ID array is too short"));
     return;
   }
-  
+
   xbeeRequestSetting("ID");
-  xbee.readBytes(netID,5);
-  while(xbee.available()){
+  xbee.readBytes(netID, 5);
+  while (xbee.available()) {
     Serial.println(F("Leftover Buffer: "));
     Serial.write((char)xbee.read());
   }
@@ -507,66 +594,66 @@ void xbeeGetNetwork(byte * netID, uint8_t max_net_len){
   //Serial.write(netID, sizeof(netID));
 }
 
-void xbeeRate(String incoming){
+void xbeeRate(String incoming) {
   String did, sensor, val, datetime;
-  int one,two,three, four;
+  int one, two, three, four;
 
-  one = incoming.indexOf(',') +1;
-  two = incoming.indexOf(',',one) +1;
-  three = incoming.indexOf(',',two) +1;
-  four = incoming.indexOf(',',three) +1;
-  did = incoming.substring(one,two-1);
-  sensor = incoming.substring(two, three-1);
-  val = incoming.substring(three, four-1);
+  one = incoming.indexOf(',') + 1;
+  two = incoming.indexOf(',', one) + 1;
+  three = incoming.indexOf(',', two) + 1;
+  four = incoming.indexOf(',', three) + 1;
+  did = incoming.substring(one, two - 1);
+  sensor = incoming.substring(two, three - 1);
+  val = incoming.substring(three, four - 1);
   datetime = incoming.substring(four);
   /*Serial.println(one);
-  Serial.println(two);
-  Serial.println(three);
-  Serial.println(did);
-  Serial.println(sensor);
-  Serial.println(val);*/
-  updateRate(did,sensor,val,datetime);
+    Serial.println(two);
+    Serial.println(three);
+    Serial.println(did);
+    Serial.println(sensor);
+    Serial.println(val);*/
+  updateRate(did, sensor, val, datetime);
 }
 
-void xbeeSettings(String incoming, String incoming2){
-  String did,location,project; 
-  String coordinator,rate,build,teardown,datetime,netid;
-  int one,two,three,four,five,six,seven,eight, nine;
+void xbeeSettings(String incoming, String incoming2) {
+  String did, location, project;
+  String coordinator, rate, build, teardown, datetime, netid;
+  int one, two, three, four, five, six, seven, eight, nine;
 
-  one = incoming.indexOf(',') +1;
-  two = incoming.indexOf(',',one) +1;
-  three = incoming.indexOf(',',two) +1;
-  did = incoming.substring(one,two-1);
-  location = incoming.substring(two, three-1);
+  one = incoming.indexOf(',') + 1;
+  two = incoming.indexOf(',', one) + 1;
+  three = incoming.indexOf(',', two) + 1;
+  did = incoming.substring(one, two - 1);
+  location = incoming.substring(two, three - 1);
   project = incoming.substring(three);
-  
-  four = incoming2.indexOf(',') +1;
-  five = incoming2.indexOf(',',four) +1;
-  six = incoming2.indexOf(',',five) +1;
-  seven = incoming2.indexOf(',',six) +1;
-  eight = incoming2.indexOf(',',seven) +1;
-  nine = incoming2.indexOf(',',eight) +1;
-  coordinator = incoming2.substring(four, five-1);
-  rate = incoming2.substring(five,six-1);
-  build = incoming2.substring(six,seven-1);
-  teardown = incoming2.substring(seven,eight-1);
-  datetime = incoming2.substring(eight, nine-1);
+
+  four = incoming2.indexOf(',') + 1;
+  five = incoming2.indexOf(',', four) + 1;
+  six = incoming2.indexOf(',', five) + 1;
+  seven = incoming2.indexOf(',', six) + 1;
+  eight = incoming2.indexOf(',', seven) + 1;
+  nine = incoming2.indexOf(',', eight) + 1;
+  coordinator = incoming2.substring(four, five - 1);
+  rate = incoming2.substring(five, six - 1);
+  build = incoming2.substring(six, seven - 1);
+  teardown = incoming2.substring(seven, eight - 1);
+  datetime = incoming2.substring(eight, nine - 1);
   netid = incoming2.substring(nine);
-  
-  updateConfig(did,location,coordinator,project,rate,build,teardown,datetime,netid);
+
+  updateConfig(did, location, coordinator, project, rate, build, teardown, datetime, netid);
 }
 
-void xbeeReading(String incoming){
+void xbeeReading(String incoming) {
   String did, sensor, val, datetime;
-  int one,two,three, four;
+  int one, two, three, four;
 
-  one = incoming.indexOf(',') +1;
-  two = incoming.indexOf(',',one) +1;
-  three = incoming.indexOf(',',two) +1;
-  four = incoming.indexOf(',',three) +1;
-  did = incoming.substring(one,two-1);
-  sensor = incoming.substring(two, three-1);
-  val = incoming.substring(three, four-1);
+  one = incoming.indexOf(',') + 1;
+  two = incoming.indexOf(',', one) + 1;
+  three = incoming.indexOf(',', two) + 1;
+  four = incoming.indexOf(',', three) + 1;
+  did = incoming.substring(one, two - 1);
+  sensor = incoming.substring(two, three - 1);
+  val = incoming.substring(three, four - 1);
   datetime = incoming.substring(four);
   //Serial.println(one);
   //Serial.println(two);
@@ -575,22 +662,22 @@ void xbeeReading(String incoming){
   //Serial.println(sensor);
   //Serial.println(val);
   //Serial.println(datetime);
-  postReading(did,sensor,val,datetime);
+  postReading(did, sensor, val, datetime);
 }
 
 
-void xbeeRequestSetting(String setting){
+void xbeeRequestSetting(String setting) {
   xbeeCommandMode();
   xbee.print("AT" + setting + "\r");
   delay(200);
-  
+
 }
 
 void xbeeUpdateSetting(String setting, String val) {
   xbeeCommandMode();
   xbee.print("AT" + setting + " " + val + "\r");
   delay(100);
-  while(xbee.available()){
+  while (xbee.available()) {
     xbee.read();
   }
   xbeeWriteSettings();
@@ -602,30 +689,30 @@ bool xbeeCommandMode() {
   delay(1100);
   xbee.print("+++");
   delay(1100);
-  xbee.readBytes(ack,2);
-  if(ack[0] != 'O' && ack[1] != 'K'){
+  xbee.readBytes(ack, 2);
+  if (ack[0] != 'O' && ack[1] != 'K') {
     return false;
   }
-  while(xbee.available())
+  while (xbee.available())
     xbee.read();
   return true;
 }
 
-bool xbeeWriteSettings(){
+bool xbeeWriteSettings() {
   byte ack[2];
   xbee.print("ATWR\r");
   delay(100);
-  xbee.readBytes(ack,2);
-  if(ack[0] != 'O' && ack[1] != 'K'){
+  xbee.readBytes(ack, 2);
+  if (ack[0] != 'O' && ack[1] != 'K') {
     return false;
   }
   return true;
 }
 
-void xbeeCloseCommand(){
+void xbeeCloseCommand() {
   xbee.print("ATCN\r");
   delay(100);
-  while(xbee.available())
+  while (xbee.available())
     xbee.read();
 }
 
@@ -633,17 +720,17 @@ void xbeeCloseCommand(){
 
 void ethernetSetup() {
   // Ethernet connection
-  
+
   pinMode(ETHERNET_EN, OUTPUT);
   digitalWrite(ETHERNET_EN, HIGH);
   delay(10);
 
-  pinMode(WIZ812MJ_RESET_PIN,OUTPUT);
-  digitalWrite(WIZ812MJ_RESET_PIN,LOW);
+  pinMode(WIZ812MJ_RESET_PIN, OUTPUT);
+  digitalWrite(WIZ812MJ_RESET_PIN, LOW);
   delay(2);
-  digitalWrite(WIZ812MJ_RESET_PIN,HIGH);
+  digitalWrite(WIZ812MJ_RESET_PIN, HIGH);
 
-  pinMode(WIZ812MJ_ES_PIN, OUTPUT); 
+  pinMode(WIZ812MJ_ES_PIN, OUTPUT);
   Ethernet.init(WIZ812MJ_ES_PIN);
 
   ethernetBegin();
@@ -652,26 +739,26 @@ void ethernetSetup() {
 bool ethernetBegin() {
   lastEthernetBegin = millis();
   Serial.println(F("Starting ethernet..."));
-  
+
   // Reset ethernet chip
-  digitalWrite(WIZ812MJ_RESET_PIN,LOW);
+  digitalWrite(WIZ812MJ_RESET_PIN, LOW);
   delay(1);
-  digitalWrite(WIZ812MJ_RESET_PIN,HIGH);
+  digitalWrite(WIZ812MJ_RESET_PIN, HIGH);
   delay(1);
-  
+
   // Power cycle
   //digitalWrite(ETHERNET_EN,LOW);
   //delay(10);
   //digitalWrite(ETHERNET_EN,HIGH);
   //delay(10);
-  
+
   //Ethernet.init(WIZ812MJ_ES_PIN);
-  
+
   unsigned long eth_timeout = 10000;
   xbeeGetMac(mac, MAC_LEN);
   //Serial.println(F("got mac..."));
   //Serial.write(mac,6);
-  if(!Ethernet.begin(mac, eth_timeout)){
+  if (!Ethernet.begin(mac, eth_timeout)) {
     Serial.println(F("Ethernet initialization failed. Readings will not be pushed to remote database."));
     return false;
   }
@@ -680,7 +767,8 @@ bool ethernetBegin() {
     Serial.print("Ethernet initialized. IP: ");
     Serial.println(Ethernet.localIP());
     Udp.begin(localPort);
-    getTimeFromWeb();
+    //getTimeFromWeb();
+    updateClockFromNTP();
     return true;
   }
 }
@@ -698,7 +786,7 @@ void ethernetMaintain() {
     return;
   }
   int stat = Ethernet.maintain(); // Must be performed regularly to maintain connection
-  switch(stat) {
+  switch (stat) {
     case 0:
       // No action performed
       break;
@@ -723,9 +811,13 @@ void ethernetMaintain() {
 }
 
 void saveReading(String lstr, String rstr, String atstr, String gtstr, String sstr, String c2str, String p1str, String p2str, String cstr) {
-  String Dstamp = formatDate();
-  String Tstamp = formatTime();
-  String DTstamp = Dstamp + " " + Tstamp;
+  time_t utc = getUTC();
+  //String Dstamp = formatDate();
+  String Dstamp = getDBDateString(utc);
+  //String Tstamp = formatTime();
+  String Tstamp = getDBTimeString(utc);
+  //String DTstamp = Dstamp + " " + Tstamp;
+  String DTstamp = getDBDateTimeString(utc);
   String sensorData = (Dstamp + ", " + Tstamp + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
   logDataSD(sensorData);
 
@@ -751,27 +843,27 @@ void saveReading(String lstr, String rstr, String atstr, String gtstr, String ss
 
 void postReading(String DID, String ST, String R, String DT)
 {
-  #ifdef DEBUG
+#ifdef DEBUG
   writeDebugLog(ST);
-  #endif
-  if(getModeCoord()){
+#endif
+  if (getModeCoord()) {
     // String in temp string is data to be submitted to MySQL
     char p[200];
     String amp = "&";
     //String Datetime = getStringDatetime();
     String temp = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "Reading=" + R + amp + "ReadTime=" + DT;
-    temp.toCharArray(p,200);
-    if(!postPage(getServer(),serverPort,pageName,p)){
+    temp.toCharArray(p, 200);
+    if (!postPage(getServer(), serverPort, pageName, p)) {
       Serial.println(F("Failed to upload sensor reading to remote. \n"));
-      #ifdef DEBUG
+#ifdef DEBUG
       writeDebugLog(F("Failed to upload sensor reading to remote. \n"));
-      #endif
+#endif
     } else {
       //Serial.println(F("Uploaded sensor reading."));
-      Serial.println(F("Uploaded sensor reading (")+ST+" @ "+DID+").");
+      Serial.println(F("Uploaded sensor reading (") + ST + " @ " + DID + ").");
     }
   } else {
-    String message = "V,"+DID+","+ST+","+R+","+DT; 
+    String message = "V," + DID + "," + ST + "," + R + "," + DT;
     sendXBee(message);
     delay(1000);
   }
@@ -779,19 +871,19 @@ void postReading(String DID, String ST, String R, String DT)
 
 void updateRate(String DID, String ST, String R, String DT)
 {
-  if(getModeCoord()){
+  if (getModeCoord()) {
     char p[200];
     String amp = "&";
     //String Datetime = getStringDatetime();
     String temp = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "SampleRate=" + R + amp + "RateChange=" + DT;
-    temp.toCharArray(p,200);
-    if(!postPage(getServer(),serverPort,pageName,p)) {
+    temp.toCharArray(p, 200);
+    if (!postPage(getServer(), serverPort, pageName, p)) {
       Serial.println(F("Failed to update sensor rate on remote."));
     } else {
       Serial.println(F("Uploaded sensor rate."));
     }
   } else {
-    String message = "R,"+DID+","+ST+","+R+","+DT;
+    String message = "R," + DID + "," + ST + "," + R + "," + DT;
     Serial.println("XBee String: " + message);
     sendXBee(message);
     delay(2500);
@@ -800,21 +892,22 @@ void updateRate(String DID, String ST, String R, String DT)
 
 void updateConfig(String DID, String Location, String Coordinator, String Project, String Rate, String Setup, String Teardown, String Datetime, String NetID)
 {
-  Datetime = getStringDatetime();
-  if(getModeCoord()) {
+  //Datetime = getStringDatetime();
+  Datetime = getDBDateTimeString();
+  if (getModeCoord()) {
     char p[200];
     String amp = "&";
-    String temp = ("DeviceID=" + DID + amp + "Project=" + Project + amp + "Coordinator=" + Coordinator+ amp + "UploadRate=" + Rate + amp + "Location=" + Location + amp + "SetupDate=" + Setup + amp + "TeardownDate=" + Teardown + amp + "ConfigChange=" + Datetime + amp + "NetID=" + NetID);
-    temp.toCharArray(p,200);
-    if(!postPage(getServer(),serverPort,pageName,p)) {
+    String temp = ("DeviceID=" + DID + amp + "Project=" + Project + amp + "Coordinator=" + Coordinator + amp + "UploadRate=" + Rate + amp + "Location=" + Location + amp + "SetupDate=" + Setup + amp + "TeardownDate=" + Teardown + amp + "ConfigChange=" + Datetime + amp + "NetID=" + NetID);
+    temp.toCharArray(p, 200);
+    if (!postPage(getServer(), serverPort, pageName, p)) {
       Serial.println(F("Failed to update device configuration on remote."));
     } else {
       Serial.println(F("Uploaded device configuration."));
     }
   } else {
-    String message = "S,"+DID+","+Location+","+Project; // Out of order from function call to balance XBee packet size
-    String message2 = "T,"+Coordinator+","+Rate+","+Setup+","+Teardown+","+Datetime+","+NetID; // out of order from function call to balance XBee packet size
-    Serial.println("XBee String: " + message + message2+" " + message.length() + " " + message2.length());
+    String message = "S," + DID + "," + Location + "," + Project; // Out of order from function call to balance XBee packet size
+    String message2 = "T," + Coordinator + "," + Rate + "," + Setup + "," + Teardown + "," + Datetime + "," + NetID; // out of order from function call to balance XBee packet size
+    Serial.println("XBee String: " + message + message2 + " " + message.length() + " " + message2.length());
     sendXBee(message);
     delay(2000);
     sendXBee(message2);
@@ -824,9 +917,9 @@ void updateConfig(String DID, String Location, String Coordinator, String Projec
 // postPage is function that performs POST request and prints results.
 byte postPage(const char* domainBuffer, int thisPort, const char* page, const char* thisData)
 {
-  #ifdef DEBUG
+#ifdef DEBUG
   writeDebugLog(F("Fxn: postPage()"));
-  #endif
+#endif
   //int inChar;
   char outBuf[200];
   EthernetClient client;
@@ -834,22 +927,22 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
   //Serial.print(F("connecting..."));
 
   int stat;
-  if((stat = client.connect(domainBuffer,thisPort)) == 1)
+  if ((stat = client.connect(domainBuffer, thisPort)) == 1)
   {
     //Serial.println(F("connected"));
-    sprintf(outBuf,"POST %s HTTP/1.1",page);
+    sprintf(outBuf, "POST %s HTTP/1.1", page);
     client.println(outBuf);
-    sprintf(outBuf,"Host: %s",domainBuffer);
+    sprintf(outBuf, "Host: %s", domainBuffer);
     client.println(outBuf);
     client.println(F("Connection: close\r\nContent-Type: application/x-www-form-urlencoded"));
-    sprintf(outBuf,"Content-Length: %u\r\n",strlen(thisData));
+    sprintf(outBuf, "Content-Length: %u\r\n", strlen(thisData));
     client.println(outBuf);
 
     client.print(thisData);
     lastEthernetConnect = millis();
   } else {
     //Serial.println(F("failed"));
-    switch(stat) {
+    switch (stat) {
       case 1:
         // Success
         break;
@@ -883,7 +976,8 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
   return 1;
 }
 
-void getTimeFromWeb(){
+/*
+void getTimeFromWeb() {
   sendNTPpacket(timeServer); // send an NTP packet to a time server
 
   // wait to see if a reply is available
@@ -907,17 +1001,25 @@ void getTimeFromWeb(){
     Serial.print(F("Unix time = "));
     // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
     const unsigned long seventyYears = 2208988800UL;
-    const unsigned long sevenHours = 25200UL; //Time zone difference.
+    //const unsigned long sevenHours = 25200UL; //Time zone difference.
     // subtract seventy years:
-    unsigned long epoch = secsSince1900 - seventyYears - sevenHours;
+    //unsigned long epoch = secsSince1900 - seventyYears - sevenHours;
+    time_t utc = secsSince1900 - seventyYears;
+    Serial.println(utc);
     // print Unix time:
-    if (epoch > SEC_2017) {
-        setRTCTime(epoch);
+    //if (epoch > SEC_2017) {
+    //  setRTCTime(epoch);
+    //  setUTC(utc);
+    //}
+    if (utc > SEC_2017) {
+      setUTC(utc);
     }
 
   } else Serial.println(F("Unable to get server time"));
 }
+*/
 
+/*
 // send an NTP request to the time server at the given address
 void sendNTPpacket(const char* address) {
   // set all bytes in the buffer to 0
@@ -939,4 +1041,147 @@ void sendNTPpacket(const char* address) {
   Udp.beginPacket(address, 123); //NTP requests are to port 123
   Udp.write(packetBuffer, NTP_PACKET_SIZE);
   Udp.endPacket();
+}
+*/
+
+
+/* Attempt to update the RTC with the current time from an NTP server. */
+void updateClockFromNTP() {
+  Serial.println(F("Retrieving NTP data...."));
+  
+  // Build NTP request packet
+  byte packet[NTP_PACKET_SIZE];
+  memset(packet,0,NTP_PACKET_SIZE);
+  packet[0]  = 0b11100011;  // LI, Version, Mode
+  packet[1]  = 0;           // Stratum, or type of clock
+  packet[2]  = 6;           // Polling Interval
+  packet[3]  = 0xEC;        // Peer Clock Precision
+  // 8 bytes of zero for Root Delay & Root Dispersion
+  packet[12] = 49;
+  packet[13] = 0x4E;
+  packet[14] = 49;
+  packet[15] = 52;
+
+  // Send request packet to NTP server.  Do nothing if cannot connect.
+  if (!Udp.beginPacket(NTP_SERVER,NTP_PORT)) {
+    Serial.println(F("Warning: Failed to connect to NTP server."));
+    return;
+  }
+  Udp.write(packet,NTP_PACKET_SIZE);
+  if (!Udp.endPacket()) {
+    Serial.println(F("Warning: Failed to connect to NTP server."));
+    return;
+  }
+  
+  // Wait for reply.
+  unsigned long t0 = millis();
+  do {
+    delay(50);
+  } while ((millis() - t0 < 1000) && (Udp.parsePacket() == 0));
+  if (Udp.available() != NTP_PACKET_SIZE) {
+    Serial.println(F("Warning: Failed to retrieve NTP data."));
+    return;
+  }
+  
+  // Get returned packet contents and extract timestamp
+  // from bytes 40-43.
+  Udp.read(packet,NTP_PACKET_SIZE);
+  unsigned long tntp = (((unsigned long)packet[40]) << 24)
+                     | (((unsigned long)packet[41]) << 16)
+                     | (((unsigned long)packet[42]) <<  8)
+                     | (((unsigned long)packet[43]) <<  0);
+
+  // NTP time is seconds since 1900-01-01 00:00:00 UTC.
+  // Unix time is seconds since 1970-01-01 00:00:00 UTC.
+  const time_t NTP1970 = 2208988800ul;
+  time_t utc = tntp - NTP1970;
+  Serial.print(F("  Retrieved NTP timestamp:  "));
+  Serial.println(tntp);
+  //Serial.print(F("  Unix timestamp: "));
+  //Serial.println(utc);
+  
+  // Update RTC only if time is recent (otherwise, ntp
+  // data must be invalid).
+  //const time_t UTC2000 = 946684800ul;
+  const time_t UTC2019 = 1546300800ul;
+  if (utc < UTC2019) {
+    Serial.println(F("Warning: Invalid NTP data (ignoring)."));
+    return;
+  }
+  setUTC(utc);
+
+  time_t utc0 = getUTC();
+  Serial.println(F("RTC updated.  New time:"));
+  Serial.print(F("  Universal time: "));
+  Serial.println(getUTCDateTimeString(utc0));
+  Serial.print(F("  Local time:     "));
+  Serial.println(getLocalDateTimeString(utc0));
+  Serial.print(F("  Unix timestamp: "));
+  Serial.println(utc0);
+}
+
+
+/* Broadcast the current UTC timestamp over the XBee network.
+   Intended to be called regularly from coordinator to sync
+   all node clocks. */
+void broadcastClock() {
+  // Only broadcast from coordinator (only node with
+  // destination address set to broadcast address).
+  if (!getModeCoord()) return;
+  
+  Serial.println(F("Broadcasting clock timestamp to all nodes...."));
+  time_t utc = getUTC();
+  
+  // Broadcast time only if recent (otherwise, clock time must
+  // be invalid).
+  //const time_t UTC2000 = 946684800ul;
+  const time_t UTC2019 = 1546300800ul;
+  if (utc < UTC2019) {
+    Serial.println(F("Warning: Invalid RTC time (ignoring)."));
+    return;
+  }
+  
+  // Zero-padded timestamp.
+  char buff[16];
+  sprintf(buff,"C%010ld",utc);
+  sendXBee(buff);
+}
+
+
+/* Parses an XBee clock broadcast packet and updates clock if
+   packet is valid. */
+void processClockPacket(const String packet) {
+  if ((packet.length() != 11) || (packet.charAt(0) != 'C')) {
+    Serial.println(F("Warning: Received invalid clock broadcast (ignoring)."));
+    return;
+  }
+  
+  time_t utc = 0;
+  for (int k = 1; k < 11; k++) {
+    char c = packet.charAt(k);
+    if ((c < '0') || (c > '9')) {
+      Serial.println(F("Warning: Received invalid clock broadcast (ignoring)."));
+      return;
+    }
+    utc = 10*utc + (c - '0');
+  }
+  
+  // Update RTC only if time is recent (otherwise, broadcast
+  // data must be invalid).
+  //const time_t UTC2000 = 946684800ul;
+  const time_t UTC2019 = 1546300800ul;
+  if (utc < UTC2019) {
+    Serial.println(F("Warning: Received invalid clock broadcast (ignoring)."));
+    return;
+  }
+  setUTC(utc);
+
+  time_t utc0 = getUTC();
+  Serial.print(F("RTC updated.  New time:"));
+  Serial.print(F("  Universal time: "));
+  Serial.println(getUTCDateTimeString(utc0));
+  Serial.print(F("  Local time:     "));
+  Serial.println(getLocalDateTimeString(utc0));
+  Serial.print(F("  Unix timestamp: "));
+  Serial.println(utc0);
 }

@@ -519,17 +519,17 @@ void testSensors(unsigned long cycles, unsigned long sampleInterval) {
   
   // Table header
   //Serial.println();
-  sprintf(hbuffer1," %9s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
-          "   time  ","  light ","  sound ","humidity","  temp  ","rad temp",
+  sprintf(hbuffer1,"  %8s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+          "  time  ","  light ","  sound ","humidity","  temp  ","rad temp",
           "   CO2  ","   CO   "," PM 2.5 ","  PM 10 ");
   //Serial.println(hbuffer1);
   // Arduino serial monitor allows for UTF-8 characters, like degree symbol.
-  sprintf(hbuffer2," %9s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
-          "   [ms]  ","  [lux] ","  [???] ","   [%]  ","  [°F]  ","  [°F]  ",
+  sprintf(hbuffer2,"  %8s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+          "  [ms]  ","  [lux] ","  [???] ","   [%]  ","  [°F]  ","  [°F]  ",
           "  [ppm] ","  [??]  "," [ug/m3]"," [ug/m3]");
   //Serial.println(hbuffer2);
-  sprintf(hbuffer3," %9s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
-          " --------","--------","--------","--------","--------","--------",
+  sprintf(hbuffer3,"  %8s %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+          "--------","--------","--------","--------","--------","--------",
           "--------","--------","--------","--------");
   //Serial.println(hbuffer3);
 
@@ -577,7 +577,7 @@ void testSensors(unsigned long cycles, unsigned long sampleInterval) {
     sensorValueToString(getPM2_5(),vbuffers[7]);
     sensorValueToString(getPM10(),vbuffers[8]);
 
-    sprintf(sbuffer," %9ld %8s %8s %8s %8s %8s %8s %8s %8s %8s",
+    sprintf(sbuffer,"%10ld %8s %8s %8s %8s %8s %8s %8s %8s %8s",
             t-t0,vbuffers[0],vbuffers[1],vbuffers[2],vbuffers[3],vbuffers[4],
             vbuffers[5],vbuffers[6],vbuffers[7],vbuffers[8]);
     Serial.println(sbuffer);
@@ -1107,12 +1107,12 @@ void testSoundSensor(unsigned long cycles, unsigned long sampleInterval) {
 
   // Table header
   //Serial.println();
-  sprintf(hbuffer1," %9s %8s %6s %8s %8s %8s %6s %6s %6s",
-          " time[ms]","interval",
+  sprintf(hbuffer1,"  %8s %8s %6s %8s %8s %8s %6s %6s %6s",
+          "time[ms]","interval",
           "     N"," average","   rms  ","   sd   ","   min","   max","  diff");
   //Serial.println(hbuffer1);
-  sprintf(hbuffer2," %9s %8s %6s %8s %8s %8s %6s %6s %6s",
-          " --------","--------",
+  sprintf(hbuffer2,"  %8s %8s %6s %8s %8s %8s %6s %6s %6s",
+          "--------","--------",
           " -----"," -------"," -------"," -------","   ---","   ---","  ----");
   //Serial.println(hbuffer2);
 
@@ -1148,7 +1148,7 @@ void testSoundSensor(unsigned long cycles, unsigned long sampleInterval) {
     dtostrf(sd.ave(),8,3,fbuffers[0]);
     dtostrf(sd.rms(),8,3,fbuffers[1]);
     dtostrf(sd.sd(),8,3,fbuffers[2]);
-    sprintf(sbuffer," %9ld %8ld %6ld %8s %8s %8s %6d %6d %6d",
+    sprintf(sbuffer,"%10ld %8ld %6ld %8s %8s %8s %6d %6d %6d",
             t,dt,sd.N,fbuffers[0],fbuffers[1],fbuffers[2],sd.min0,sd.max0,sd.max0-sd.min0);
     Serial.println(sbuffer);
   }
@@ -1293,11 +1293,11 @@ void testTemperatureSensor(unsigned long cycles, unsigned long sampleInterval) {
 
   // Table header
   //Serial.println();
-  sprintf(hbuffer1," %9s  %7s  %7s",
-          " time[ms]","  T[F] ","  RH[%]");
+  sprintf(hbuffer1,"  %8s  %7s  %7s",
+          "time[ms]","  T[F] ","  RH[%]");
   //Serial.println(hbuffer1);
-  sprintf(hbuffer2," %9s  %7s  %7s",
-          " --------"," ------"," ------");
+  sprintf(hbuffer2,"  %8s  %7s  %7s",
+          "--------"," ------"," ------");
   //Serial.println(hbuffer2);
 
   // Repeat measurements cycles number of times.
@@ -1326,7 +1326,7 @@ void testTemperatureSensor(unsigned long cycles, unsigned long sampleInterval) {
       strcpy(fbuffers[0],"   --- ");
       strcpy(fbuffers[1],"   --- ");
     }
-    sprintf(sbuffer," %9ld  %7s  %7s",
+    sprintf(sbuffer,"%10ld  %7s  %7s",
             t,fbuffers[0],fbuffers[1]);
     Serial.println(sbuffer);
   }
@@ -2022,15 +2022,15 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
 
   // Table header
   //Serial.println();
-  sprintf(hbuffer1," %8s  %27s  %34s  %8s",
+  sprintf(hbuffer1,"  %8s  %27s  %34s  %8s",
           "time[ms]"," mass concentration [ug/m3]",
           "   number concentration [#/cm3]   "," average");
   //Serial.println(hbuffer1);
-  sprintf(hbuffer2," %8s  %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %8s",
+  sprintf(hbuffer2,"  %8s  %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %8s",
           "        "," PM1.0"," PM2.5"," PM4.0","PM10.0",
           "PM0.5"," PM1.0"," PM2.5"," PM4.0","PM10.0","size[um]");
   //Serial.println(hbuffer2);
-  sprintf(hbuffer3," %8s  %27s  %34s  %8s",
+  sprintf(hbuffer3,"  %8s  %27s  %34s  %8s",
           "--------","---------------------------",
           "----------------------------------","--------");
   //Serial.println(hbuffer3);
@@ -2075,7 +2075,7 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
     dtostrf(pmData.NumPM4,6,2,fbuffers[7]);
     dtostrf(pmData.NumPM10,6,2,fbuffers[8]);
     dtostrf(pmData.PartSize,8,2,fbuffers[9]);
-    sprintf(sbuffer," %8ld  %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %8s",
+    sprintf(sbuffer,"%10ld  %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %8s",
             t,fbuffers[0],fbuffers[1],fbuffers[2],fbuffers[3],
             fbuffers[4],fbuffers[5],fbuffers[6],fbuffers[7],fbuffers[8],
             fbuffers[9]);

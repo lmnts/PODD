@@ -25,15 +25,16 @@ void setupPodSD();
 void setupSDLogging();
 void logDataSD(String sensorData);
 void writeSDConfig(String DID, String Location, String Coordinator, String Project, String Rate, String Setup, String Teardown, String Datetime, String NetID);
-void dateTime(uint16_t* date, uint16_t* time);
+void sdDateTime(uint16_t* date, uint16_t* time);
 void setupSensorTimers();
+void setupClockTimers();
 void handleLoopLogging();
-String formatTime();
-String formatDate();
-String formatDateTime();
-String getStringDatetime();
-void printTime();
-void setRTCTime(unsigned long epoch);
+//String formatTime();
+//String formatDate();
+//String formatDateTime();
+//String getStringDatetime();
+//void printTime();
+//void setRTCTime(unsigned long epoch);
 
 // log readings
 void humidityLog();

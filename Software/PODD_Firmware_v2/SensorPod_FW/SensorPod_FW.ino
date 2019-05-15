@@ -1,6 +1,7 @@
 /*
  * SensorPod_FW  
  * 2017 - Nick Turner and Morgan Redfield
+ * 2018 - Chris Savage
  * 
  * This sketch is intended for use with the LMN Post-Occupancy
  * SensorPods. It will sample each of several sensors at a
@@ -35,6 +36,7 @@
 // Project Files
 #include "pod_util.h"
 #include "pod_serial.h"
+#include "pod_clock.h"
 #include "pod_config.h"
 #include "pod_menu.h"
 #include "pod_sensors.h"
@@ -61,6 +63,10 @@ void setup() {
   Serial.println();
   delay(1000);
   
+  #ifdef CLOCK_TESTING
+  testClock(-1,1000);
+  #endif
+  
   #ifdef SENSOR_TESTING
   Wire.begin();
   // Sound sensor testing
@@ -85,9 +91,12 @@ void setup() {
   Wire.begin();
   
   Serial.println(F("Setting up RTC...."));
-  setupRTC();
+  //setupRTC();
+  //Serial.print(F("  Current date/time: "));
+  //Serial.println(formatDateTime());
+  initRTC();
   Serial.print(F("  Current date/time: "));
-  Serial.println(formatDateTime());
+  Serial.println(getLocalDateTimeString());
   
   // Ensure LED is off
   pinMode(LED_PIN, OUTPUT);
@@ -104,9 +113,11 @@ void setup() {
   //Serial.println(F("DEBUG:"));
   //serialCharPrompt(F("Waiting for keypress"));
   
+  // SD uses > 100 mA when initializing/writing, but < 1 mA when idle
   Serial.println(F("Setting up SD...."));
   setupPodSD();
   
+  // Ethernet uses ~ 150 mA when powered
   Serial.println(F("Setting up ethernet...."));
   ethernetSetup();
   
@@ -118,23 +129,53 @@ void setup() {
   //podIntro();
   interactivePrompt();
   
+  Serial.println(F("Configuring XBee...."));
+  setXBeeCoordinatorMode(getModeCoord());
+  
+  // Begin background process to pull data from the XBee for later
+  // processing.  Used by coordinator to buffer packets arriving from
+  // other nodes until they can be sent to the database over the internet.
+  // Used by drones to buffer clock syncing packets (the delay in
+  // processing means the clock may be off by a few seconds relative to
+  // the coordinator).
+  // NOTE: On the coordinator, various sensor-processing routines
+  // (notably those for sound and CO2) might occasionally cause an
+  // XBee bus character to be missed, corrupting a packet that will get
+  // passed onto the database.  Though those sensor routines have been
+  // redesigned to greatly reduce that possibility, it is unclear at
+  // this time whether the corruption rate is so low as to be ignorable.
+  // If safety is desired, avoid reading some/all of the sensors on the
+  // coordinator node.
+  Serial.println(F("Starting XBee monitoring process...."));
+  startXBee();
+  
   Serial.println(F("Starting SD logging...."));
   setupSDLogging();
   
   Serial.println(F("Starting sensor timers...."));
+  Serial.println(F("  Extra delays here to avoid timer pileup."));
   setupSensorTimers();
+
+  if (getModeCoord()) {
+    Serial.println(F("Starting clock timers...."));
+    setupClockTimers();
+  }
   
   // power optimizations
-  if (getRatePM() <= 0) {
-    Serial.println(F("Powering down particulate matter sensor...."));
-    digitalWrite(PM_ENABLE, LOW);
-  }
-  if(! getModeCoord()){
-    if(getRatePM() > 120) {
-      Serial.println(F("Powering down particulate matter sensor until next reading...."));
-      digitalWrite(PM_ENABLE, LOW);
-    }
-    
+  // Sensor power handling moved to setupSensorTimers()
+  //if (getRateSound() <= 0) {
+  //  Serial.println(F("Disabling sound sampling...."));
+  //  stopSoundSampling();
+  //}
+  //if (getRatePM() <= 0) {
+  //  Serial.println(F("Powering down particulate matter sensor...."));
+  //  powerOffPMSensor();
+  //}
+  //if(getRatePM() > 120) {
+  //  Serial.println(F("Powering down particulate matter sensor until next reading...."));
+  //  powerOffPMSensor();
+  //}
+  if(!getModeCoord()){
     //Disable Ethernet for Drones
     Serial.println(F("Powering down ethernet...."));
     digitalWrite(ETHERNET_EN, LOW);
@@ -164,10 +205,10 @@ void setup() {
   
   // Begin background process to pull data from the XBee for later
   // processing.  Currently only necessary for the coordinator.
-  if(getModeCoord()){
-    Serial.println(F("Starting coordinator XBee monitoring process...."));
-    startXBee();
-  }
+  //if(getModeCoord()){
+  //  Serial.println(F("Starting coordinator XBee monitoring process...."));
+  //  startXBee();
+  //}
   
   Serial.println();
   Serial.println(F("Initialization and setup complete.  The PODD will now begin taking data."));

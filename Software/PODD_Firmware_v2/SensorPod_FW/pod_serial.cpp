@@ -404,7 +404,7 @@ int serialIntegerPrompt(String prompt, bool reprompt, int default0) {
    is received.
    A default value can be specified, used if an empty
    response is given. */
-int serialLongPrompt(String prompt, bool reprompt, long default0) {
+long serialLongPrompt(String prompt, bool reprompt, long default0) {
   while (true) {
     // Provide prompt to user
     Serial.print(prompt);

@@ -16,7 +16,9 @@
  */
  
 #include "pod_config.h"
+#include "pod_eeprom.h"
 //#include "pod_util.h"
+#include "pod_clock.h"
 #include "pod_serial.h"
 #include "pod_sensors.h"
 #include "pod_network.h"
@@ -135,12 +137,17 @@ void podIntro() { // Introduction control loop
 }
 
 void savePodConfig() { // Save configuration to SD, EEPROM, and DB.  
-  String Datetime = getStringDatetime();
+  //String Datetime = getStringDatetime();
+  String Datetime = getDBDateTimeString();
   Datetime.toCharArray(storage.lastUpdate, 20);
   
   // Save to EEPROM
-  for (unsigned int t=0; t<sizeof(storage); t++)
-    EEPROM.write(CONFIG_START + t, *((char*)&storage + t));
+  for (unsigned int t=0; t<sizeof(storage); t++) {
+    //EEPROM.write(EEPROM_CONFIG_ADDR + t, *((char*)&storage + t));
+    // Put only writes byte if different from current EEPROM value
+    // (reduces EEPROM wear).
+    EEPROM.put(EEPROM_CONFIG_ADDR + t, *((char*)&storage + t));
+  }
   
   // Save to DB - Rates
   // If these are sent too fast over XBee network by non-coordinators,
@@ -709,12 +716,12 @@ PodConfigStruct& getPodConfig() {
 void loadPodConfig() {
   // To make sure there are settings, and they are YOURS!
   // If nothing is found it will use the default settings.
-  if (EEPROM.read(CONFIG_START + 0) == CONFIG_VERSION[0] &&
-      EEPROM.read(CONFIG_START + 1) == CONFIG_VERSION[1] &&
-      EEPROM.read(CONFIG_START + 2) == CONFIG_VERSION[2] &&
-      EEPROM.read(CONFIG_START + 3) == CONFIG_VERSION[3])
+  if (EEPROM.read(EEPROM_CONFIG_ADDR + 0) == CONFIG_VERSION[0] &&
+      EEPROM.read(EEPROM_CONFIG_ADDR + 1) == CONFIG_VERSION[1] &&
+      EEPROM.read(EEPROM_CONFIG_ADDR + 2) == CONFIG_VERSION[2] &&
+      EEPROM.read(EEPROM_CONFIG_ADDR + 3) == CONFIG_VERSION[3])
     for (unsigned int t=0; t<sizeof(storage); t++)
-      *((char*)&storage + t) = EEPROM.read(CONFIG_START + t);
+      *((char*)&storage + t) = EEPROM.read(EEPROM_CONFIG_ADDR + t);
 }
 
 char * getServer() {
