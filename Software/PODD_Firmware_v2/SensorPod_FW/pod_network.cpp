@@ -22,11 +22,29 @@
 #define xbee Serial1
 
 // XBee packet buffering
+// If there is sufficient dynamic memory remaining for firmware
+// operation, might want to increase XBee buffer size to reduce
+// packet loss due to buffer overruns.
+#define XBEE_BUFFER_SIZE 256
 volatile char xbeeBuffer[XBEE_BUFFER_SIZE];
 volatile size_t xbeeBufferHead = 0;
 volatile size_t xbeeBufferElements = 0;
 volatile size_t xbeeBufferOverrun = 0;
 volatile bool xbeeBufferHold = false;
+
+// Use ASCII "start of text" and "end of text" control characters
+// to mark the start and end of packets.  The use of both allows
+// incomplete packets to be identified during buffer overruns.
+#define PACKET_START_TOKEN '\x02'
+#define PACKET_END_TOKEN '\x03'
+
+// In addition to the use of the above tokens, a two-digit
+// hexadecimal packet length (modulo 256) is prepended to a packet
+// when sent over the XBee network; incoming packets are dropped
+// if the length does not match.  That may occur if the serial
+// interface missed a character or the serial buffer overflowed,
+// which may happen if any firmware routines prevent background
+// ISRs from running.
 
 // How frequently data is pulled from hardware serial buffer (microseconds)
 // through the use of a timer-driven interrupt service routine (ISR).
@@ -159,7 +177,7 @@ void setXBeeCoordinatorMode(const bool coord) {
 
   // Settings for drone
   } else {
-    // Set as coordinator
+    // Set as non-coordinator
     submitXBeeCommand(F("ATCE 0"));
     // Set destination to coordinator address (0x0000000000000000).
     // Note command string omits '0x'.
@@ -860,7 +878,9 @@ void saveReading(String lstr, String rstr, String atstr, String gtstr, String ss
   String Tstamp = getDBTimeString(utc);
   //String DTstamp = Dstamp + " " + Tstamp;
   String DTstamp = getDBDateTimeString(utc);
-  String sensorData = (Dstamp + ", " + Tstamp + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
+  // Use local time in log file, but also include unix timestamp
+  //String sensorData = (Dstamp + ", " + Tstamp + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
+  String sensorData = (getLocalDateTimeString(utc) + ", " + String(utc) + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
   logDataSD(sensorData);
 
   if (lstr != "")
@@ -870,7 +890,7 @@ void saveReading(String lstr, String rstr, String atstr, String gtstr, String ss
   if (atstr != "")
     postReading(getDevID(), "AirTemp", atstr, DTstamp);
   if (gtstr != "")
-    postReading(getDevID(), "GlobalTemp", gtstr, DTstamp);
+    postReading(getDevID(), "GlobeTemp", gtstr, DTstamp);
   if (sstr != "")
     postReading(getDevID(), "Sound", sstr, DTstamp);
   if (c2str != "")

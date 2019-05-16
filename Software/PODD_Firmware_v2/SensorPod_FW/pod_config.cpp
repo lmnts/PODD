@@ -157,7 +157,7 @@ void savePodConfig() { // Save configuration to SD, EEPROM, and DB.
   delay(delta);
   updateRate(storage.devid, "Humidity", storage.humidityT, Datetime);
   delay(delta);
-  updateRate(storage.devid, "GlobalTemp", storage.tempT, Datetime);
+  updateRate(storage.devid, "GlobeTemp", storage.tempT, Datetime);
   delay(delta);
   updateRate(storage.devid, "Sound", storage.soundT, Datetime);
   delay(delta);

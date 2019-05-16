@@ -133,7 +133,8 @@ void setupSDLogging() {
 
   Serial.print(F("Logging to: "));
   Serial.println(filename);
-  String header = F("Date, Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
+  //String header = F("Date, Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
+  String header = F("Date/Time, Timestamp, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
   dataFile.println(header);
 }
 

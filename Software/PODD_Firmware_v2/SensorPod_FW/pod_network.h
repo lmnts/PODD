@@ -12,15 +12,6 @@
 
 //--------------------------------------------------------------------------------------------- [XBee Management]
 
-// XBee packet buffering
-#define XBEE_BUFFER_SIZE 256
-
-// Use ASCII "start of text" and "end of text" control characters
-// to mark the start and end of packets.  The use of both allows
-// incomplete packets to be identified during buffer overruns.
-#define PACKET_START_TOKEN '\x02'
-#define PACKET_END_TOKEN '\x03'
-
 void initXBee();
 void setXBeeCoordinatorMode(const bool coord);
 void startXBee();
