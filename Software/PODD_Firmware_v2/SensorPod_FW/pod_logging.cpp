@@ -84,7 +84,33 @@ void setupPodSD() {
 }
 
 void setupSDLogging() {  
+  // Data log file directory and name based on date/time.
+  // Use UTC time.
+  //time_t t = getUTC();
+  // Use local time.
+  time_t t = getLocalTime();
+  tmElements_t tm;
+  breakTime(t,tm);
+  
+  // Create data log directory (/data/YYYY/MM/)
+  char dirname[16];
+  sprintf(dirname,"/data/%04d/%02d/",1970+tm.Year,tm.Month);
+  //sprintf(dirname,"/data/%02d%02d/",(1970+tm.Year)%100,tm.Month);
+  if (!SD.exists(dirname)) {
+    SD.mkdir(dirname);
+  }
+  
+  // Create data log file (YYMMDDHH.CSV)
+  char filename[32];
+  sprintf(filename,"%s%02d%02d%02d%02d.CSV",dirname,
+          ((1970+tm.Year) % 100),tm.Month,tm.Day,tm.Hour);
+ // Note FILE_WRITE will create non-existent file, append to
+  // existent file.
+  SdFile::dateTimeCallback(sdDateTime);
+  dataFile = SD.open(filename,FILE_WRITE);
+  
   // create a new file for data logging
+  /*
   char filename[] = "LOG000.CSV";
   for (uint16_t i = 0; i < 1000; i++) {
     filename[3] = i / 100 + '0';
@@ -97,7 +123,8 @@ void setupSDLogging() {
       break;  // leave the loop!
     }
   }
-
+  */
+  
   /*if (! dataFile) {
     Serial.print("Error opening ");
     Serial.println(filename);
@@ -169,6 +196,7 @@ void handleLoopLogging() {
   }
   else {
     Alarm.delay(250); // Checks all alarm.timerRepeat events from setup()
+    processXBee();
   }
 }
 
@@ -365,11 +393,8 @@ void humidityLog() {
   //Serial.print(AirTemp * 1.8 + 32);
   Serial.print(AirTemp);
   Serial.println(" °F");
-  String RHstr = "";
-  String AirTempstr = "";
-  RHstr = String(RH);
-  //AirTempstr = String (AirTemp * 1.8 + 32);
-  AirTempstr = String(AirTemp);
+  String RHstr(RH);
+  String AirTempstr(AirTemp);
   saveReading("", RHstr, AirTempstr, "", "", "", "", "", "");
 }
 
@@ -379,11 +404,10 @@ void lightLog() {
     Serial.println(F("Failed to retrieve light data."));
     return;
   }
-  Serial.print("Light : ");
+  Serial.print("Light: ");
   Serial.print(light);
   Serial.println(" lux");
-  String lightstr = "";
-  lightstr = String(light);
+  String lightstr(light);
   saveReading(lightstr, "", "", "", "", "", "", "", "");
 }
 
@@ -394,11 +418,10 @@ void tempLog() {
     Serial.println(F("Failed to retrieve globe temperature."));
     return;
   }
-  Serial.print("TempG : ");
+  Serial.print("TempG: ");
   Serial.print(T);
   Serial.println(" °F");
-  String GTempstr = "";
-  GTempstr = String(T);
+  String GTempstr(T);
   saveReading("", "", "", GTempstr, "", "", "", "", "");
 }
 
@@ -408,31 +431,28 @@ void soundLog() {
     Serial.println(F("Failed to retrieve sound level."));
     return;
   }
-  Serial.print("Sound = ");
+  Serial.print("Sound: ");
   Serial.print(sound_amp);
   Serial.println(" [arb]");
-  String Soundstr = "";
-  Soundstr = String(sound_amp);
+  String Soundstr(sound_amp);
   saveReading("", "", "", "", Soundstr, "", "", "", "");
 }
 
 void co2Log() {
   int co2 = getCO2();
-  Serial.print("CO2 = ");
+  Serial.print("CO2: ");
   Serial.print(co2);
   Serial.println(" ppm");
-  String CO2str = "";
-  CO2str = String(co2);
+  String CO2str(co2);
   saveReading("", "", "", "", "", CO2str, "", "", "");
 }
 
 void coLog() {
   float CoSpecRaw = getCO();
-  Serial.print("CO = ");
+  Serial.print("CO: ");
   Serial.print(CoSpecRaw);
   Serial.println(" [arb]");
-  String CoSpecRawstr = "";
-  CoSpecRawstr = String(CoSpecRaw);
+  String CoSpecRawstr(CoSpecRaw);
   saveReading("", "", "", "", "", "", "", "", CoSpecRawstr);
 }
 
@@ -455,10 +475,14 @@ void particleLog() {
     double c2_5 = getPM2_5();
     double c10 = getPM10();
     
-    String PM2_5str = "";
-    String PM10str = "";
-    PM2_5str = String(c2_5);
-    PM10str = String (c10);
+    Serial.print("PM_2.5: ");
+    Serial.print(c2_5);
+    Serial.println(" ug/m^3");
+    Serial.print("PM_10:  ");
+    Serial.print(c10);
+    Serial.println(" ug/m^3");
+    String PM2_5str(c2_5);
+    String PM10str(c10);
     saveReading("", "", "", "", "", "", PM2_5str, PM10str, "");
   } else {
     Serial.println(F("Failed to retrieve particle meter data."));
@@ -477,7 +501,7 @@ void sdDateTime(uint16_t* date, uint16_t* time) {
   time_t t = getUTC();
   tmElements_t tm;
   breakTime(t,tm);
-  *date = FAT_DATE(tm.Year,tm.Month,tm.Day);
+  *date = FAT_DATE(1970+tm.Year,tm.Month,tm.Day);
   *time = FAT_TIME(tm.Hour,tm.Minute,tm.Second);
 
   /*

@@ -127,6 +127,18 @@ time_t getUTC() {
 }
 
 
+//------------------------------------------------------------------------------
+/* Get the current time as unix-like time: number of seconds since 1970-01-01
+   at 00:00:00, but in the local timezone.  Returns 0 if failed to extract time
+   from RTC.  Must initialize timezone using initRTC() before first using this
+   function. */
+time_t getLocalTime() {
+  time_t t = getUTC();
+  if (t == 0) return 0;
+  return timezone.toLocal(t);
+}
+
+
 
 // Timezone Functions ==========================================================
 

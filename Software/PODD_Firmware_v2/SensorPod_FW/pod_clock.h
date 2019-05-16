@@ -62,6 +62,9 @@ bool probeRTC();
 void setUTC(time_t t);
 time_t getUTC();
 
+// Number of seconds since 1970-01-01 at 00:00:00 in configured timezone.
+time_t getLocalTime();
+
 // Same as above, but using a structure with date/time elements.
 // Note the year field in this structure is numbers of years since 1970
 // (10 -> 1980), whereas the DS3234 RTC uses the last two year digits

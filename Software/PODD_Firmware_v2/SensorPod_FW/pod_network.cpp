@@ -258,7 +258,8 @@ void readXBee() {
 
 
 /* Send the given packet over the XBee network to the coordinator.
-   Adds start & stop tokens to help coordinator with packet parsing. */
+   Adds start & stop tokens and 2-digit packet hex length prefix to
+   help coordinator with packet parsing. */
 void sendXBee(const String packet)
 {
   // Serial output should be flushed here as activity may
@@ -266,21 +267,30 @@ void sendXBee(const String packet)
   Serial.print(F("XBee send: "));
   Serial.println(packet);
   Serial.flush();
-
+  
+  // Length of packet, in 2-digit hex (mod 256)
+  char lbuf[3];
+  sprintf(lbuf,"%02X",(uint8_t)(packet.length() % 256));
+  lbuf[2] = '\0';
+  
   // Would probably work...
   //xbee.write(PACKET_START_TOKEN);
+  //xbee.write(lbuf);
   //xbee.write(packet);
   //xbee.write(PACKET_END_TOKEN);
 
   // Send payload to serial all at once in the hopes that the
-  // XBee will place it it in a single network packet.
+  // XBee will place it in a single network packet.
   // By default, data in XBee input buffer is sent when packet
   // is full or 3 UART character transmission times have passed
   // without activity.
   // Note we omit null-termination character.
-  size_t bufLength = packet.length() + 2;
+  //size_t bufLength = packet.length() + 2;
+  size_t bufLength = packet.length() + 4;
   char buf[bufLength];
-  strcpy(&buf[1], packet.c_str());
+  //strcpy(&buf[1], packet.c_str());
+  strcpy(&buf[1], lbuf);
+  strcpy(&buf[3], packet.c_str());
   buf[0] = PACKET_START_TOKEN;
   buf[bufLength - 1] = PACKET_END_TOKEN;
   xbee.write(buf);
@@ -395,18 +405,22 @@ String getXBeeBufferPacket() {
   // Loop over buffer until we find a valid packet
   // or we reach the end.
   while (1) {
+    
     // Remove everything prior to first start token
     while ((xbeeBufferElements > 0) && (xbeeBuffer[(xbeeBufferHead - xbeeBufferElements) % XBEE_BUFFER_SIZE] != PACKET_START_TOKEN)) {
       xbeeBufferElements--;
     }
+    
     // (Nearly) empty buffer: no valid packets
     if (xbeeBufferElements < 2) break;
+    
     // Look for end token
     size_t endLoc = (xbeeBufferHead - xbeeBufferElements + 1) % XBEE_BUFFER_SIZE;
     while ((endLoc != xbeeBufferHead) && (xbeeBuffer[endLoc] != PACKET_END_TOKEN)) {
       endLoc = (endLoc + 1) % XBEE_BUFFER_SIZE;
     }
     if (endLoc == xbeeBufferHead) break;
+    
     // Search backwards from end for start token, in case there are multiple
     size_t startLoc = (endLoc - 1) % XBEE_BUFFER_SIZE;
     while (xbeeBuffer[startLoc] != PACKET_START_TOKEN) {
@@ -416,23 +430,51 @@ String getXBeeBufferPacket() {
       xbeeBufferElements = (xbeeBufferHead - startLoc) % XBEE_BUFFER_SIZE;
       Serial.println(F("Warning: Invalid XBee data dropped (possible buffer overrun)."));
     }
+
+    // At this point, startLoc should point to start token, endLoc points
+    // to end token, and everything in between should be a two-character
+    // hexadecimal packet length (mod 256) followed by the packet.
+    
     // Ignore empty packets
     if ((endLoc - startLoc) % XBEE_BUFFER_SIZE <= 2) {
       xbeeBufferElements = (xbeeBufferHead - endLoc + 1) % XBEE_BUFFER_SIZE;
       Serial.println(F("Warning: Dropped empty XBee packet."));
       continue;
     }
-    // Now extract packet characters, excluding start & end tokens
-    const size_t packetBufSize = (endLoc - startLoc) % XBEE_BUFFER_SIZE;
+    
+    // Ignore packets missing length prefix
+    if ((endLoc - startLoc) % XBEE_BUFFER_SIZE <= 4) {
+      xbeeBufferElements = (xbeeBufferHead - endLoc + 1) % XBEE_BUFFER_SIZE;
+      Serial.println(F("Warning: Dropped invalid XBee packet."));
+      continue;
+    }
+    
+    // Check packet length.  First two characters should be
+    // remaining packet length in hexadecimal (mod 256).
+    const size_t packetLen = ((endLoc - startLoc) % XBEE_BUFFER_SIZE) - 3;
+    char lbuf[3];
+    sprintf(lbuf,"%02X",(uint8_t)(packetLen % 256));
+    lbuf[2] = '\0';
+    if ((xbeeBuffer[(startLoc + 1) % XBEE_BUFFER_SIZE] != lbuf[0])
+        || (xbeeBuffer[(startLoc + 2) % XBEE_BUFFER_SIZE] != lbuf[1])) {
+      xbeeBufferElements = (xbeeBufferHead - endLoc + 1) % XBEE_BUFFER_SIZE;
+      Serial.println(F("Warning: Dropped invalid XBee packet (length mismatch)."));
+      continue;
+    }
+    
+    // We have found a valid packet: extract packet characters, excluding
+    // start & end tokens and two-character packet length prefix.
+    const size_t packetBufSize = ((endLoc - startLoc) % XBEE_BUFFER_SIZE) - 2;
     char packetBuf[packetBufSize];
     for (size_t pos = 0; pos < packetBufSize - 1; pos++) {
-      packetBuf[pos] = xbeeBuffer[(startLoc + 1 + pos) % XBEE_BUFFER_SIZE];
+      packetBuf[pos] = xbeeBuffer[(startLoc + 3 + pos) % XBEE_BUFFER_SIZE];
     }
     packetBuf[packetBufSize - 1] = '\0';
     xbeeBufferElements = (xbeeBufferHead - endLoc + 1) % XBEE_BUFFER_SIZE;
     if (!wasHeld) releaseXBeeBuffer();
     return packetBuf;
   }
+  
   // If we reach here, we did not find a valid packet
   if (!wasHeld) releaseXBeeBuffer();
   return EMPTY_STRING;
