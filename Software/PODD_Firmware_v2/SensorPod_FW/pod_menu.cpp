@@ -30,8 +30,11 @@
 #include "pod_serial.h"
 #include "pod_clock.h"
 #include "pod_config.h"
+#include "pod_network.h"
 #include "pod_logging.h"
 #include "pod_sensors.h"
+
+#include <Ethernet.h>
 
 
 // Constants/global variables ==================================================
@@ -111,6 +114,9 @@ void mainMenu() {
     Serial.println(F("  (3) Sensor timing"));
     showMenuSensorTimingSettings();
     Serial.println(F("  (4) Sensor configuration/testing"));
+    // Ethernet settings
+    Serial.println(F("  (N) Network settings"));
+    showMenuNetworkSettings();
     // RTC time/settings
     Serial.println(F("  (C) Clock settings"));
     showMenuClockSettings();
@@ -159,6 +165,10 @@ void mainMenu() {
       //case '5':
       //  Serial.println(F("<option not yet implemented>"));
       //  break;
+      case 'N':
+      case 'n':
+        configureNetworkSettings();
+        break;
       case 'C':
       case 'c':
         configureClockSettings();
@@ -257,6 +267,29 @@ void showMenuSensorTimingSettings() {
   showMenuSensorTimingEntry(F("Carbon dioxide"),(getPodConfig().co2T));
   showMenuSensorTimingEntry(F("Carbon monoxide"),(getPodConfig().coT));
   //showMenuSensorTimingEntry(F("Data upload interval"),(getPodConfig().uploadT));
+}
+
+
+//----------------------------------------------
+/* Prints to serial various network settings.
+   Intended to be used just below menu's network settings entry. */
+void showMenuNetworkSettings() {
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Connected:   "));
+  Serial.print(ethernetConnected() ? F("yes") : F("no"));
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("MAC address: "));
+  Serial.print(getMACAddressString());
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("IP address:  "));
+  Serial.print(Ethernet.localIP());
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("DNS server:  "));
+  Serial.print(Ethernet.dnsServerIP());
+  Serial.println();
 }
 
 
@@ -392,6 +425,36 @@ void configureSensorTimingSettings() {
 
 
 //------------------------------------------------------------------------------
+/* Prompt the user to update network settings over the serial interface. */
+void configureNetworkSettings() {
+  bool b;
+
+  Serial.println(F("Current ethernet status:"));
+  Serial.print(F("  Connected:   "));
+  Serial.print(ethernetConnected() ? F("yes") : F("no"));
+  Serial.println();
+  Serial.print(F("  MAC address: "));
+  Serial.print(getMACAddressString());
+  Serial.println();
+  Serial.print(F("  IP address:  "));
+  Serial.print(Ethernet.localIP());
+  Serial.println();
+  Serial.print(F("  DNS server:  "));
+  Serial.print(Ethernet.dnsServerIP());
+  Serial.println();
+  Serial.println();
+  
+  b = serialYesNoPrompt(F("(Re)initialize ethernet connection (y/n)?"),true,false);
+  if (b) {
+    Serial.println(F("Initializing ethernet..."));
+    ethernetBegin();
+  }
+  
+  Serial.println();
+}
+
+
+//------------------------------------------------------------------------------
 /* Prompt the user to update clock settings over the serial interface. */
 void configureClockSettings() {
   bool b;
@@ -512,7 +575,7 @@ void sensorMenu() {
     Serial.println(F("  (6) Clean particulate matter sensor"));
     Serial.println();
     // Leave menu and return to main menu
-    Serial.println(F("  (Q) Quit interactive mode"));
+    Serial.println(F("  (Q) Quit sensor menu"));
     Serial.println();
     //Serial.println(F("                        ------------------------                        "));
     Serial.println(F("        ----------------                                                "));

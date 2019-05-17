@@ -31,8 +31,8 @@
 #include <ctype.h>
 #include <Time.h>
 #include <Timezone.h>
-#include <SparkFunDS3234RTC.h>
 #include <EEPROM.h>
+#include <SPI.h>
 #ifdef CLOCK_TESTING
 #include "pod_serial.h"
 #endif
@@ -377,8 +377,8 @@ String getUTCDateTimeString(time_t t) {
    to a date string intended for database uploads.  Current time will
    be used if the argument is zero. */
 String getDBDateString(time_t t) {
-  return getUTCDateString(t);
-  //return getLocalDateString(t);
+  //return getUTCDateString(t);
+  return getLocalDateString(t);
 }
 
 
@@ -387,8 +387,8 @@ String getDBDateString(time_t t) {
    to a time string intended for database uploads.  Current time will
    be used if the argument is zero. */
 String getDBTimeString(time_t t) {
-  return getUTCTimeString(t);
-  //return getLocalTimeString(t);
+  //return getUTCTimeString(t);
+  return getLocalTimeString(t);
 }
 
 
@@ -400,7 +400,10 @@ String getDBDateTimeString(time_t t) {
   if (t == 0) t = getUTC();
   // MySQL: cannot directly submit ISO 8601 formatted datetime strings.
   // Just submit and store a MySQL-compatible UTC datetime string.
-  return getDateString(t) + " " + getTimeString(t);
+  //return getDateString(t) + " " + getTimeString(t);
+  // Use local time instead (if we also send the unix time)
+  time_t tloc = (t != 0) ? timezone.toLocal(t) : 0;
+  return getDateString(tloc) + " " + getTimeString(tloc);
   
   // ISO 8601 formats:
   //   YYYY-MM-DDThh:mm:ss

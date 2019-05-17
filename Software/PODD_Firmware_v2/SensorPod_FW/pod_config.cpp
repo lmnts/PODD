@@ -152,7 +152,9 @@ void savePodConfig() { // Save configuration to SD, EEPROM, and DB.
   // Save to DB - Rates
   // If these are sent too fast over XBee network by non-coordinators,
   // there may be buffer overflows and/or packet loss
-  const unsigned long delta = (storage.coord == 'Y') ? 250 : 1000;
+  //const unsigned long delta = (storage.coord == 'Y') ? 250 : 1000;
+  // XBee rate upload routine already adds delay to avoid pileup.
+  const unsigned long delta = (storage.coord == 'Y') ? 250 : 250;
   updateRate(storage.devid, "Light", storage.lightT, Datetime);
   delay(delta);
   updateRate(storage.devid, "Humidity", storage.humidityT, Datetime);

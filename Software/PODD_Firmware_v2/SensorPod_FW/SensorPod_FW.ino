@@ -125,7 +125,15 @@ void setup() {
   Serial.println(LINE);
   Serial.println();
   
+  Serial.println(F("Loading PODD configuration...."));
   loadPodConfig();
+  Serial.print(F("  Device:  "));
+  Serial.println(getDevID());
+  Serial.print(F("  Project: "));
+  Serial.println(getProject());
+
+  // Prompt for interactive menu, proceed to menu if user responds.
+  // Times out in ~30 seconds if no response.
   //podIntro();
   interactivePrompt();
   
@@ -153,7 +161,7 @@ void setup() {
   setupSDLogging();
   
   Serial.println(F("Starting sensor timers...."));
-  Serial.println(F("  Extra delays here to avoid timer pileup."));
+  //Serial.println(F("  Extra delays here to avoid timer pileup."));
   setupSensorTimers();
 
   if (getModeCoord()) {
@@ -228,7 +236,7 @@ void setup() {
 void loop() {
   // digitalWrite(CP, HIGH);
   // checks to see if start date and time have passed or not:
-  if(ethernetOnline() && getModeCoord()) {
+  if(getModeCoord()) {
     ethernetMaintain();
   }
   

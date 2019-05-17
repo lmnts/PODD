@@ -13,6 +13,8 @@
 //--------------------------------------------------------------------------------------------- [XBee Management]
 
 void initXBee();
+//bool submitXBeeCommand(const String cmd);
+//String getXBeeCommandResponse(const String cmd);
 void setXBeeCoordinatorMode(const bool coord);
 void startXBee();
 void readXBeeISR();
@@ -43,14 +45,18 @@ void xbeeGetNetwork(byte * netID);
 
 #define ETHERNET_EN 43
 
+void initMACAddress();
+String getMACAddressString();
+
 void ethernetSetup();
 bool ethernetBegin();
-bool ethernetOnline();
+//bool ethernetOnline();
+bool ethernetConnected();
 void ethernetMaintain();
 //String formatTime();
 //String formatDate();
 void saveReading(String lstr, String rstr, String atstr, String gtstr, String sstr, String c2str, String p1str, String p2str, String cstr);
-void postReading(String DID, String ST, String R, String DT);
+void postReading(String DID, String ST, String R, String TS, String DT);
 void updateRate(String DID, String ST, String R, String DT);
 void updateConfig(String DID, String Location, String Coordinator, String Project, String Rate, String Setup, String Teardown, String Datetime, String NetID);
 byte postPage(const char* domainBuffer, int thisPort, const char* page, const char* thisData);

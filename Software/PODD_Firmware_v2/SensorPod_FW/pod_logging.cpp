@@ -18,7 +18,7 @@
 #include "pod_network.h"
 #include "pod_sensors.h"
 
-#include <SparkFunDS3234RTC.h>
+//#include <SparkFunDS3234RTC.h>
 #include <SD.h>
 
 // This library must be modified to increase the maximum number
@@ -51,6 +51,7 @@ File logFile;
 // declaring strings
 String amp;
 
+/*
 void setupRTC() {
     // RTC 3234
   rtc.begin(DS13074_CS_PIN);
@@ -60,15 +61,14 @@ void setupRTC() {
   rtc.update();
   // NOTE: Interrupt pin not attached and alarms not used,
   // so we disable this code [CS 2018-08-25]
-  /*
   // Configure Alarm(s):
-  rtc.enableAlarmInterrupt();
-  rtc.setAlarm1(logint);
+  //rtc.enableAlarmInterrupt();
+  //rtc.setAlarm1(logint);
   // Set alarm2 to alert when minute increments by 1
-  bool alarm = true;
-  rtc.setAlarm2(0, 8, 1, alarm); // Alarm2 8:00 on Monday (1)
-  */
+  //bool alarm = true;
+  //rtc.setAlarm2(0, 8, 1, alarm); // Alarm2 8:00 on Monday (1)
 }
+*/
 
 void setupPodSD() {
   // SD CARD
@@ -134,7 +134,7 @@ void setupSDLogging() {
   Serial.print(F("Logging to: "));
   Serial.println(filename);
   //String header = F("Date, Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
-  String header = F("Date/Time, Timestamp, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
+  String header = F("Timestamp, Date/Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
   dataFile.println(header);
 }
 
@@ -145,8 +145,6 @@ void logDataSD(String sensorData) {
   writeDebugLog(F("Fxn: logDataSD"));
   #endif
   dataFile.println(sensorData);
-  //Serial.println("Date, Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2, PM 2.5, PM 10, CO");
-  //Serial.println(sensorData);
   // ending the loop and clearing variables
   dataFile.flush();
 }
@@ -176,14 +174,17 @@ void writeSDConfig(String DID, String Location, String Coordinator, String Proje
   }
 
   String settingData = "";
-  //String Dstamp = formatDate();
-  String Dstamp = getDBDateString();
-  //String Tstamp = formatTime();
-  String Tstamp = getDBTimeString();
-  String setheader = "Date, Time, Device ID, Project, Location, Coordinator?, Network Code, Setup Date, Teardown Date, Upload Rate, Light, RH, Globe Temp, Sound, CO2, Particle, CO"; // FILE HEADER
+  time_t utc = getUTC();
+  String TS(utc);
+  //String D = formatDate();
+  //String D = getDBDateString(utc);
+  //String T = formatTime();
+  //String T = getDBTimeString(utc);
+  String DT = getDBDateTimeString(utc);
+  String setheader = "Timestamp, Date/Time, Device ID, Project, Location, Coordinator?, Network Code, Setup Date, Teardown Date, Upload Rate, Light, RH, Globe Temp, Sound, CO2, Particle, CO"; // FILE HEADER
 
   //void writeSDConfig(String DID, String Location, String Coordinator, String Project, String Rate, String Setup, String Teardown, String Datetime) {
-  settingData = (Dstamp + ", " + Tstamp + ", " + DID + ", " + Project + ", " + Location + ", " + Coordinator + ", " + NetID + ", " + Setup + ", " + Teardown + ", " + getRateUpload() + ", " + getRateLight() + ", " + getRateRH() + ", " + getRateGlobeTemp() + ", " + getRateSound() + ", " + getRateCO2() + ", " + getRatePM() + ", " + getRateCO());
+  settingData = (TS + ", " + DT + ", " + DID + ", " + Project + ", " + Location + ", " + Coordinator + ", " + NetID + ", " + Setup + ", " + Teardown + ", " + getRateUpload() + ", " + getRateLight() + ", " + getRateRH() + ", " + getRateGlobeTemp() + ", " + getRateSound() + ", " + getRateCO2() + ", " + getRatePM() + ", " + getRateCO());
   setFile.println(settingData);
   setFile.close();
   Serial.println(F("Settings file updated."));
@@ -207,7 +208,9 @@ void setupSensorTimers() {
   // interval times (or multiples of each other).  Since TimeAlarms
   // resolution is in seconds, make sure the delay is at least one
   // second.
-  const int init_delay = 1500;
+  //const int init_delay = 1500;
+  // NOTE: Delay in XBee sensor reading upload routine prevents pileup.
+  const int init_delay = 0;
 
   // Illuminance
   if(getRateLight() > 0) {
@@ -538,7 +541,7 @@ void writeDebugLog(String message) {
     // only open a new file if it doesn't exist
     logFile = SD.open(logname, FILE_WRITE);
     delay(1000);
-    String logheader = F("Date, Time, Message, Free RAM"); // FILE HEADER
+    String logheader = F("Timestamp, Date/Time, Message, Free RAM"); // FILE HEADER
     logFile.println(logheader);
     Serial.println(F("Settings file created."));
     logFile.flush();
@@ -555,12 +558,13 @@ void writeDebugLog(String message) {
   
   time_t utc = getUTC();
   String logData = "";
-  //String Dstamp = formatDate();
-  String Dstamp = getDBDateString(utc);
-  //String Tstamp = formatTime();
-  String Tstamp = getDBTimeString(utc);
-
-  logData = (Dstamp + ", " + Tstamp + ", " + message + ", " + freeRam());
+  String TS(utc);
+  //String D = formatDate();
+  //String D = getDBDateString(utc);
+  //String T = formatTime();
+  //String T = getDBTimeString(utc);
+  String DT = getDBDateTimeString(utc);
+  logData = (TS + ", " + DT + ", " + message + ", " + freeRam());
   logFile.println(logData);
   logFile.close();
   Serial.println(F("Debug log file updated."));

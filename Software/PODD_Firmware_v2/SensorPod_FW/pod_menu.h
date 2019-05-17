@@ -58,12 +58,14 @@ void showMenuProjectSettings();
 void showMenuNodeSettings();
 void showMenuSensorTimingEntry(String s, int v);
 void showMenuSensorTimingSettings();
+void showMenuNetworkSettings();
 void showMenuClockSettings();
 
 // Interactive prompts to configure various settings
 void configureProjectSettings();
 void configureNodeSettings();
 void configureSensorTimingSettings();
+void configureNetworkSettings();
 void configureClockSettings();
 
 // Sensor menu

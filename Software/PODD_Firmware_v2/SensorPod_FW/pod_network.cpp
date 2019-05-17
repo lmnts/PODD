@@ -16,8 +16,8 @@
 
 #include <SPI.h>
 #include <TimerOne.h>
-#include "Ethernet.h"
-#include "EthernetUdp.h"
+#include <Ethernet.h>
+#include <EthernetUdp.h>
 
 #define xbee Serial1
 
@@ -65,10 +65,12 @@ volatile bool xbeeBufferHold = false;
 
 String set1;
 String set2;
-#define NETID_LEN 4
-byte network[] = {0xA, 0xB, 0xC, 0xD};
+//#define NETID_LEN 4
+//byte network[] = {0xA, 0xB, 0xC, 0xD};
 
 // Ethernet connection settings
+#define MAC_ADDRESS_LEN 6
+byte ethMACAddress[MAC_ADDRESS_LEN];
 #define MAC_LEN 6
 byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}; // MAC address can be anything, as long as it is unique on network
 //char timeServer[] =  "time.nist.gov"; // government NTP server
@@ -84,17 +86,102 @@ char params[200];// insure params is big enough to hold your variables
 #define delayMillis 10000UL // Delay between establishing connection and making POST request
 unsigned long thisMillis = 0;
 unsigned long lastMillis = 0;
-unsigned long lastEthernetConnect = 0;  // maximum / 2
-unsigned long lastEthernetBegin = 0;
-#define ETHERNET_RECONNECT_TIME (5*60000UL)
 #define WIZ812MJ_ES_PIN 20 // WIZnet SPI chip-select pin
 #define WIZ812MJ_RESET_PIN 9 // WIZnet reset pin
 bool online = false;
+
+// Maximum amount of time to allow ethernet to obtain connection.
+#define ETHERNET_START_TIMEOUT 5000
+
+// Number of packets uploaded to server (successfully or unsuccessfully)
+unsigned long packetsUploaded = 0;
+
+// Maximum amount of time [ms] to wait for a server response when
+// posting data.  If PODD closes connection too early, the server
+// may not process the POST request.  However, if this is too long
+// and the server is in fact inaccessible, PODD sensor reads can be
+// delayed (those reads should still be available through the SD
+// data logs).
+#define HTTP_POST_TIMEOUT 250
 
 // NTP settings
 #define NTP_SERVER "time.nist.gov"
 #define NTP_PORT 123
 #define NTP_PACKET_SIZE 48
+
+
+
+
+//--------------------------------------------------------------------------------------------- [XBee Management]
+
+// Minimum amount of time between network reconnect attempts [ms].
+// Prevents frequent restarts if the network is unavailable.
+#define NETWORK_RECONNECT_INTERVAL (5*60000UL)
+// Number of consecutive unsuccessful network interactions before
+// attempting a network reconnect.  Occasional fails may be due
+// to network instability or congestion instead of an unconnected
+// network.
+#define NETWORK_FAIL_EVENTS 2
+// Minimum length of time for network interactions to be unsuccessful
+// before attempting a network reconnect [ms].  Short blips may occur
+// even when network is "connected".
+#define NETWORK_FAIL_TIME (10000UL)
+
+/* Structure that keeps track of the network status via recent activity
+   to determine if/when the network needs to be reinitialized/restarted. */
+struct NetworkStatus {
+  // Whether last network interaction succeeded
+  bool _connected = false;
+  // Number of consecutive successful or unsuccessful network
+  // interactions (depending on connected status)
+  int consecutive = 0;
+  // Most recent time attempt was made to initialize/start network
+  unsigned long tstart = 0;
+  // Earliest time of current string of successful network interactions
+  // (0 if last network connection unsuccessful)
+  unsigned long tsuccess = 0;
+  // Earliest time of current string of unsuccessful network interactions
+  // (0 if last network connection successful)
+  unsigned long tfail = 0;
+
+  // Indicates if last network interaction succeeded
+  bool connected() {return _connected;}
+  // Indicates if network should be (re)initialized/started
+  bool needsRestart() {
+    if (_connected) return false;
+    if (tstart == 0) return true;
+    unsigned long t0 = millis();
+    if ((tstart > 0) && (t0 - tstart < NETWORK_RECONNECT_INTERVAL)) return false;
+    if ((tfail > 0) && (t0 - tfail < NETWORK_FAIL_TIME)) return false;
+    if (consecutive < NETWORK_FAIL_EVENTS) return false;
+    return true; 
+  }
+  // Resets struct fields (intended for internal use)
+  void reset(bool success) {
+    _connected = success;
+    consecutive = 0;
+    tsuccess = success ? millis() : 0;
+    tfail = success ? 0 : millis();
+  }
+  // Call when a network (re)start attempt is made, with the
+  // success of that event.
+  void restarted(bool success) {
+    tstart = millis();
+    reset(success);
+  }
+  // Call when a network interaction succeeds
+  void succeeded() {
+    if (!_connected) reset(true);
+    consecutive++;
+  }
+  // Call when a network interaction fails
+  void failed() {
+    if (_connected) reset(false);
+    consecutive++;
+  }
+};
+
+NetworkStatus ethStatus;
 
 
 //--------------------------------------------------------------------------------------------- [XBee Management]
@@ -150,6 +237,83 @@ bool submitXBeeCommand(const String cmd) {
   if (response.equals(F("ERROR\r"))) return false;
   // Missing/invalid/unknown response
   return false;
+}
+
+
+/* Sends the given command to the XBee and returns the response.
+   Returns empty string if communication was unsuccessful.
+   XBee must already be in coordinator mode.
+   Do not include trailing '\r'. */
+String getXBeeCommandResponse(const String cmd) {
+  // Clear incoming buffer
+  while (xbee.available()) xbee.read();
+  // Submit command
+  xbee.print(cmd + "\r");
+  const int BUF_LEN = 16;
+  size_t pos = 0;
+  char buf[BUF_LEN];
+  // Wait for response until '\r'
+  unsigned long t0 = millis();
+  while (millis() - t0 < 1000) {
+    if (xbee.available()) {
+      char c = xbee.read();
+      if (c == '\r') break;
+      if (c == '\n') break;
+      buf[pos++] = c;
+      if (pos >= BUF_LEN) break;
+    }
+    delay(5);
+  }
+  // Check for overflow
+  if (pos >= BUF_LEN) pos = BUF_LEN - 1;
+  buf[pos] = '\0';
+  // Clear remaining incoming buffer
+  while (xbee.available()) xbee.read();
+  //Serial.print(F("XBee response: "));
+  //Serial.println(buf);
+  return String(buf);
+}
+
+
+/* Sends the given command to the XBee and returns the numeric response.
+   Returns 0 if communication was unsuccessful or response was not
+   hexadecimal.  XBee must already be in coordinator mode.
+   Do not include trailing '\r'. */
+uint32_t getXBeeNumericResponse(const String cmd) {
+  String response = getXBeeCommandResponse(cmd);
+  uint32_t v = 0;
+  for (size_t k = 0; k < response.length(); k++) {
+    char c = response.charAt(k);
+    if ((c >= '0') && (c <= '9')) {
+      v = (v << 4) + (uint8_t)(c - '0');
+    } else if ((c >= 'A') && (c <= 'F')) {
+      v = (v << 4) + (uint8_t)(c - 'A' + 10);
+    } else if ((c >= 'a') && (c <= 'f')) {
+      v = (v << 4) + (uint8_t)(c - 'a' + 10);
+    } else {
+      return 0;
+    }
+  }
+  return v;
+}
+
+
+/* Gets the XBee serial number.  64-bit number is divided into
+   high and low 32-bit parts.  Returns 0 is could not obtain
+   the serial number. */
+void getXBeeSerialNumber(uint32_t &SH, uint32_t &SL) {
+  // Put XBee in command mode
+  delay(1100);
+  xbee.print(F("+++"));
+  delay(1100);
+  while (xbee.available()) xbee.read();
+
+  // Get serial numbers
+  SH = getXBeeNumericResponse("ATSH");  // For XBee S3B, this is 0x0013A2XX
+  SL = getXBeeNumericResponse("ATSL");
+
+  // Exit command mode
+  submitXBeeCommand(F("ATCN"));
 }
 
 
@@ -704,17 +868,19 @@ void xbeeSettings(String incoming, String incoming2) {
 }
 
 void xbeeReading(String incoming) {
-  String did, sensor, val, datetime;
-  int one, two, three, four;
+  String did, sensor, val, timestamp, datetime;
+  int one, two, three, four, five;
 
   one = incoming.indexOf(',') + 1;
   two = incoming.indexOf(',', one) + 1;
   three = incoming.indexOf(',', two) + 1;
   four = incoming.indexOf(',', three) + 1;
+  five = incoming.indexOf(',', four) + 1;
   did = incoming.substring(one, two - 1);
   sensor = incoming.substring(two, three - 1);
   val = incoming.substring(three, four - 1);
-  datetime = incoming.substring(four);
+  timestamp = incoming.substring(four, five - 1);
+  datetime = incoming.substring(five);
   //Serial.println(one);
   //Serial.println(two);
   //Serial.println(three);
@@ -722,7 +888,7 @@ void xbeeReading(String incoming) {
   //Serial.println(sensor);
   //Serial.println(val);
   //Serial.println(datetime);
-  postReading(did, sensor, val, datetime);
+  postReading(did, sensor, val, timestamp, datetime);
 }
 
 
@@ -778,6 +944,41 @@ void xbeeCloseCommand() {
 
 //--------------------------------------------------------------------------------------------- [Upload Support]
 
+/* Sets the ethernet MAC address using the XBee serial number. */
+void initMACAddress() {
+  // Use XBee's serial number for ethernet MAC address
+  // (as it does not have its own)
+  uint32_t SH,SL;
+  getXBeeSerialNumber(SH,SL);
+  // If failed to get XBee serial number, provide a default.
+  // For XBee S3B, SH would be 0x0013A2XX; we use the same here
+  // to allow for network whitelisting by MAC range.
+  // if (SH == 0) SH = 0xF0E1D2C3;
+  if (SH == 0) SH = 0x0013A200;
+  if (SL == 0) SL = 0xB4A59687;
+  ethMACAddress[0] = (uint8_t)((SH >> 24) & 0xFF);
+  ethMACAddress[1] = (uint8_t)((SH >> 16) & 0xFF);
+  ethMACAddress[2] = (uint8_t)((SH >>  8) & 0xFF);
+  //ethMACAddress[] = (uint8_t)((SH >>  0) & 0xFF);
+  //ethMACAddress[] = (uint8_t)((SL >> 24) & 0xFF);
+  ethMACAddress[3] = (uint8_t)((SL >> 16) & 0xFF);
+  ethMACAddress[4] = (uint8_t)((SL >>  8) & 0xFF);
+  ethMACAddress[5] = (uint8_t)((SL >>  0) & 0xFF);
+}
+
+
+String getMACAddressString() {
+  String s = "";
+  char buf[3];
+  for (size_t k = 0; k < MAC_ADDRESS_LEN; k++) {
+    if (k != 0) s = s + ":";
+    sprintf(buf,"%02X",ethMACAddress[k]);
+    s = s + buf;
+  }
+  return s;
+}
+
+
 void ethernetSetup() {
   // Ethernet connection
 
@@ -793,12 +994,19 @@ void ethernetSetup() {
   pinMode(WIZ812MJ_ES_PIN, OUTPUT);
   Ethernet.init(WIZ812MJ_ES_PIN);
 
+  initMACAddress();
+  Serial.print(F("Ethernet MAC Address: "));
+  Serial.println(getMACAddressString());
+
   ethernetBegin();
+
+  if (ethStatus.connected()) {
+    updateClockFromNTP();
+  }
 }
 
 bool ethernetBegin() {
-  lastEthernetBegin = millis();
-  Serial.println(F("Starting ethernet..."));
+  //Serial.println(F("Starting ethernet..."));
 
   // Reset ethernet chip
   digitalWrite(WIZ812MJ_RESET_PIN, LOW);
@@ -814,38 +1022,61 @@ bool ethernetBegin() {
 
   //Ethernet.init(WIZ812MJ_ES_PIN);
 
-  unsigned long eth_timeout = 10000;
-  xbeeGetMac(mac, MAC_LEN);
+  // Link status (not supported by W5100)
+  //Serial.print(F("Ethernet link status: "));
+  //Serial.println(Ethernet.linkStatus());
+
+  //unsigned long eth_timeout = 10000;
+  //xbeeGetMac(mac, MAC_LEN);
   //Serial.println(F("got mac..."));
   //Serial.write(mac,6);
-  if (!Ethernet.begin(mac, eth_timeout)) {
-    Serial.println(F("Ethernet initialization failed. Readings will not be pushed to remote database."));
+  //if (!Ethernet.begin(mac, eth_timeout)) {
+  if (!Ethernet.begin(ethMACAddress,ETHERNET_START_TIMEOUT)) {
+    //online = false;
+    ethStatus.restarted(false);
+    Serial.println(F("Ethernet initialization failed.  Readings will not be pushed to remote"));
+    Serial.println(F("database until connection can be established."));
     return false;
-  }
-  else {
-    online = true;
-    Serial.print("Ethernet initialized. IP: ");
+  } else {
+    //online = true;
+    ethStatus.restarted(true);
+    Serial.print(F("Ethernet initialized. IP: "));
     Serial.println(Ethernet.localIP());
     Udp.begin(localPort);
+    // Update time only in initialization routine instead of
+    // for every network reconnect.  There is a separate process
+    // that will make regular NTP updates.
     //getTimeFromWeb();
-    updateClockFromNTP();
+    //updateClockFromNTP();
     return true;
   }
+  
 }
 
-bool ethernetOnline() {
-  return online;
+
+//bool ethernetOnline() {
+//  return online;
+//}
+
+
+/* Indicates if last network interaction was successful. */
+bool ethernetConnected() {
+  return ethStatus.connected();
 }
+
 
 void ethernetMaintain() {
-  unsigned long t0 = millis();
-  if (((t0 - lastEthernetConnect) >= ETHERNET_RECONNECT_TIME)
-      && ((t0 - lastEthernetBegin) >= ETHERNET_RECONNECT_TIME)) {
-    Serial.println("Extended period without successful internet connection.  Restarting ethernet...");
+  // Restart ethernet if not have had recent successful connection
+  if (ethStatus.needsRestart()) {
+    Serial.println(F("Extended period without successful internet connection.  Restarting ethernet..."));
     ethernetBegin();
     return;
   }
-  int stat = Ethernet.maintain(); // Must be performed regularly to maintain connection
+
+  // Routine will perform occasional network connection
+  // maintenance, like renewing DHCP lease when necessary.
+  // Should be called regularly.
+  int stat = Ethernet.maintain();
   switch (stat) {
     case 0:
       // No action performed
@@ -872,38 +1103,39 @@ void ethernetMaintain() {
 
 void saveReading(String lstr, String rstr, String atstr, String gtstr, String sstr, String c2str, String p1str, String p2str, String cstr) {
   time_t utc = getUTC();
-  //String Dstamp = formatDate();
-  String Dstamp = getDBDateString(utc);
-  //String Tstamp = formatTime();
-  String Tstamp = getDBTimeString(utc);
-  //String DTstamp = Dstamp + " " + Tstamp;
-  String DTstamp = getDBDateTimeString(utc);
+  String TS(utc);
+  //String D = formatDate();
+  //String D = getDBDateString(utc);
+  //String T = formatTime();
+  //String T = getDBTimeString(utc);
+  //String DT = D + " " + T;
+  String DT = getDBDateTimeString(utc);
   // Use local time in log file, but also include unix timestamp
-  //String sensorData = (Dstamp + ", " + Tstamp + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
-  String sensorData = (getLocalDateTimeString(utc) + ", " + String(utc) + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
+  //String sensorData = (D + ", " + T + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
+  String sensorData = (TS + ", " + DT + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
   logDataSD(sensorData);
 
   if (lstr != "")
-    postReading(getDevID(), "Light", lstr, DTstamp);
+    postReading(getDevID(), "Light", lstr, TS, DT);
   if (rstr != "")
-    postReading(getDevID(), "Humidity", rstr, DTstamp);
+    postReading(getDevID(), "Humidity", rstr, TS, DT);
   if (atstr != "")
-    postReading(getDevID(), "AirTemp", atstr, DTstamp);
+    postReading(getDevID(), "AirTemp", atstr, TS, DT);
   if (gtstr != "")
-    postReading(getDevID(), "GlobeTemp", gtstr, DTstamp);
+    postReading(getDevID(), "GlobeTemp", gtstr, TS, DT);
   if (sstr != "")
-    postReading(getDevID(), "Sound", sstr, DTstamp);
+    postReading(getDevID(), "Sound", sstr, TS, DT);
   if (c2str != "")
-    postReading(getDevID(), "CO2", c2str, DTstamp);
+    postReading(getDevID(), "CO2", c2str, TS, DT);
   if (p1str != "")
-    postReading(getDevID(), "PM_2.5", p1str, DTstamp);
+    postReading(getDevID(), "PM_2.5", p1str, TS, DT);
   if (p2str != "")
-    postReading(getDevID(), "PM_10", p2str, DTstamp);
+    postReading(getDevID(), "PM_10", p2str, TS, DT);
   if (cstr != "")
-    postReading(getDevID(), "CO", cstr, DTstamp);
+    postReading(getDevID(), "CO", cstr, TS, DT);
 }
 
-void postReading(String DID, String ST, String R, String DT)
+void postReading(String DID, String ST, String R, String TS, String DT)
 {
 #ifdef DEBUG
   writeDebugLog(ST);
@@ -913,19 +1145,22 @@ void postReading(String DID, String ST, String R, String DT)
     char p[200];
     String amp = "&";
     //String Datetime = getStringDatetime();
-    String temp = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "Reading=" + R + amp + "ReadTime=" + DT;
+    String temp = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "Reading=" + R + amp + "TimeStamp=" + TS + amp + "ReadTime=" + DT;
     temp.toCharArray(p, 200);
     if (!postPage(getServer(), serverPort, pageName, p)) {
-      Serial.println(F("Failed to upload sensor reading to remote. \n"));
+      //Serial.println(F("Failed to upload sensor reading to remote. \n"));
+      Serial.print("[" + String(packetsUploaded) + "] ");
+      Serial.println(F("Failed to upload sensor reading to remote."));
 #ifdef DEBUG
       writeDebugLog(F("Failed to upload sensor reading to remote. \n"));
 #endif
     } else {
       //Serial.println(F("Uploaded sensor reading."));
-      Serial.println(F("Uploaded sensor reading (") + ST + " @ " + DID + ").");
+      Serial.print("[" + String(packetsUploaded) + "] ");
+      Serial.println(F("Uploaded sensor reading (") + ST + F(" @ ") + DID + F(")."));
     }
   } else {
-    String message = "V," + DID + "," + ST + "," + R + "," + DT;
+    String message = "V," + DID + "," + ST + "," + R + "," + TS + "," + DT;
     sendXBee(message);
     delay(1000);
   }
@@ -940,15 +1175,17 @@ void updateRate(String DID, String ST, String R, String DT)
     String temp = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "SampleRate=" + R + amp + "RateChange=" + DT;
     temp.toCharArray(p, 200);
     if (!postPage(getServer(), serverPort, pageName, p)) {
+      Serial.print("[" + String(packetsUploaded) + "] ");
       Serial.println(F("Failed to update sensor rate on remote."));
     } else {
+      Serial.print("[" + String(packetsUploaded) + "] ");
       Serial.println(F("Uploaded sensor rate."));
     }
   } else {
     String message = "R," + DID + "," + ST + "," + R + "," + DT;
     Serial.println("XBee String: " + message);
     sendXBee(message);
-    delay(2500);
+    delay(2000);
   }
 }
 
@@ -962,8 +1199,10 @@ void updateConfig(String DID, String Location, String Coordinator, String Projec
     String temp = ("DeviceID=" + DID + amp + "Project=" + Project + amp + "Coordinator=" + Coordinator + amp + "UploadRate=" + Rate + amp + "Location=" + Location + amp + "SetupDate=" + Setup + amp + "TeardownDate=" + Teardown + amp + "ConfigChange=" + Datetime + amp + "NetID=" + NetID);
     temp.toCharArray(p, 200);
     if (!postPage(getServer(), serverPort, pageName, p)) {
+      Serial.print("[" + String(packetsUploaded) + "] ");
       Serial.println(F("Failed to update device configuration on remote."));
     } else {
+      Serial.print("[" + String(packetsUploaded) + "] ");
       Serial.println(F("Uploaded device configuration."));
     }
   } else {
@@ -971,14 +1210,17 @@ void updateConfig(String DID, String Location, String Coordinator, String Projec
     String message2 = "T," + Coordinator + "," + Rate + "," + Setup + "," + Teardown + "," + Datetime + "," + NetID; // out of order from function call to balance XBee packet size
     Serial.println("XBee String: " + message + message2 + " " + message.length() + " " + message2.length());
     sendXBee(message);
-    delay(2000);
+    delay(100);
     sendXBee(message2);
+    delay(2000);
   }
 }
 
 // postPage is function that performs POST request and prints results.
 byte postPage(const char* domainBuffer, int thisPort, const char* page, const char* thisData)
 {
+  // Keep track of POST attempts (successful or not)
+  packetsUploaded++;
 #ifdef DEBUG
   writeDebugLog(F("Fxn: postPage()"));
 #endif
@@ -991,6 +1233,17 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
   int stat;
   if ((stat = client.connect(domainBuffer, thisPort)) == 1)
   {
+    // Debugging
+    //Serial.print(F("HTTP server IP: "));
+    //Serial.print(client.remoteIP());
+    //Serial.print(':');
+    //Serial.println(client.remotePort());
+    //Serial.print(F("Connected: "));
+    //Serial.println(client.connected());
+    //Serial.print(F("Available for write: "));
+    //Serial.println(client.availableForWrite());
+    //Serial.print(F(""));
+    
     //Serial.println(F("connected"));
     sprintf(outBuf, "POST %s HTTP/1.1", page);
     client.println(outBuf);
@@ -1001,8 +1254,36 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
     client.println(outBuf);
 
     client.print(thisData);
-    lastEthernetConnect = millis();
+    client.flush();
+
+    // Wait for server to respond before closing connection.
+    // Otherwise, server may have failed to receive the full POST.
+    unsigned long t0 = millis();
+    while (millis() - t0 < HTTP_POST_TIMEOUT) {
+      if (client.available()) break;
+      delay(1);
+    }
+    //Serial.print(F("Available: "));
+    //Serial.println(client.available());
+    if (!client.available()) {
+      Serial.println(F("Warning: Server did not respond before timeout.  Data upload may have failed."));
+      // May not want to flag this: probably a server issue, not
+      // an ethernet connection issue.
+      //ethStatus.failed();
+    } else {
+      //Serial.print(F("Server response time: "));
+      //Serial.println(millis() - t0);
+      // Successfully connected to server:
+      // clear bad ethernet connection flags
+      ethStatus.succeeded();
+    }
+    client.stop();
+    
   } else {
+    // Flag bad ethernet connection
+    ethStatus.failed();
+    
+    // Indicate error.  Note most network errors are '0' (uninformative).
     //Serial.println(F("failed"));
     switch (stat) {
       case 1:
@@ -1033,7 +1314,7 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
     return 0;
   }
 
-  client.stop();
+  //client.stop();
 
   return 1;
 }
@@ -1127,11 +1408,15 @@ void updateClockFromNTP() {
   // Send request packet to NTP server.  Do nothing if cannot connect.
   if (!Udp.beginPacket(NTP_SERVER,NTP_PORT)) {
     Serial.println(F("Warning: Failed to connect to NTP server."));
+    // Flag bad ethernet connection
+    ethStatus.failed();
     return;
   }
   Udp.write(packet,NTP_PACKET_SIZE);
   if (!Udp.endPacket()) {
     Serial.println(F("Warning: Failed to connect to NTP server."));
+    // Flag bad ethernet connection
+    ethStatus.failed();
     return;
   }
   
@@ -1144,6 +1429,10 @@ void updateClockFromNTP() {
     Serial.println(F("Warning: Failed to retrieve NTP data."));
     return;
   }
+  
+  // Successfully connected to NTP server:
+  // clear bad ethernet connection flags
+  ethStatus.succeeded();
   
   // Get returned packet contents and extract timestamp
   // from bytes 40-43.

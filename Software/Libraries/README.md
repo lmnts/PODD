@@ -11,8 +11,6 @@ Those marked with (†) are not in the Arduino library repository and must be in
   <https://github.com/closedcube/ClosedCube_OPT3001_Arduino>
 - **NeoSWSerial:**
   <https://github.com/SlashDevin/NeoSWSerial>
-- **SparkFun DS3234 RTC (†):**
-  <https://github.com/sparkfun/SparkFun_DS3234_RTC_Arduino_Library>
 - **Time library:**
   <https://github.com/PaulStoffregen/Time>
 - **TimeAlarms (†):**
