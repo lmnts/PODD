@@ -553,9 +553,9 @@ void cleanXBeeBuffer(const bool cleanStart, const bool cleanEnd) {
       xbeeBufferElements--;
     }
   }
-  // Remove everything aftter last end token
+  // Remove everything after last end token
   if (cleanEnd) {
-    while ((xbeeBufferElements > 0) && (xbeeBuffer[xbeeBufferHead] != PACKET_END_TOKEN)) {
+    while ((xbeeBufferElements > 0) && (xbeeBuffer[(xbeeBufferHead - 1) % XBEE_BUFFER_SIZE] != PACKET_END_TOKEN)) {
       xbeeBufferElements--;
       xbeeBufferHead = (xbeeBufferHead - 1) % XBEE_BUFFER_SIZE;
     }
