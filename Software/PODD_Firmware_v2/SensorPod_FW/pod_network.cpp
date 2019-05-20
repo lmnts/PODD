@@ -117,6 +117,7 @@ unsigned long packetsUploaded = 0;
 // Minimum amount of time between network reconnect attempts [ms].
 // Prevents frequent restarts if the network is unavailable.
 #define NETWORK_RECONNECT_INTERVAL (5*60000UL)
+//#define NETWORK_RECONNECT_INTERVAL (25000UL)
 // Number of consecutive unsuccessful network interactions before
 // attempting a network reconnect.  Occasional fails may be due
 // to network instability or congestion instead of an unconnected
@@ -144,6 +145,7 @@ struct NetworkStatus {
   // (0 if last network connection successful)
   unsigned long tfail = 0;
 
+  
   // Indicates if last network interaction succeeded
   bool connected() {return _connected;}
   // Indicates if network should be (re)initialized/started
@@ -152,6 +154,14 @@ struct NetworkStatus {
     if (tstart == 0) return true;
     unsigned long t0 = millis();
     if ((tstart > 0) && (t0 - tstart < NETWORK_RECONNECT_INTERVAL)) return false;
+    // If we do not have an IP address, network needs reinitialization
+    // (do not wait for multiple network interaction failures).
+    IPAddress ip = Ethernet.localIP();
+    if (ip == IPAddress(0ul) || ip == IPAddress(0xFFFFFFFFul)) return true;
+    // If network interactions have consistently failed, try
+    // reinitializing network.  This may be a server issue rather
+    // than a network issue, so trying not to be too aggressive with
+    // restarts here.
     if ((tfail > 0) && (t0 - tfail < NETWORK_FAIL_TIME)) return false;
     if (consecutive < NETWORK_FAIL_EVENTS) return false;
     return true; 
@@ -694,7 +704,7 @@ void processXBee() {
 
   // Cycle over packets until we find a valid one.
   String packet;
-  bool uploaded = false;
+  size_t nuploaded = 0;
   while ((packet = getXBeeBufferPacket()).length() > 0) {
     Serial.print(F("XBee packet: "));
     Serial.println(packet);
@@ -703,19 +713,19 @@ void processXBee() {
       case 'V':
         if (!getModeCoord()) break;
         xbeeReading(packet);
-        uploaded = true;
+        nuploaded++;
         break;
       case 'R':
         if (!getModeCoord()) break;
         xbeeRate(packet);
-        uploaded = true;
+        nuploaded++;
         break;
       case 'S':
         if (!getModeCoord()) break;
         set1 = packet;
         if (set1.length() > 0 && set2.length() > 0) {
           xbeeSettings(set1, set2);
-          uploaded = true;
+          nuploaded++;
           set1 = "";
           set2 = "";
         }
@@ -725,7 +735,7 @@ void processXBee() {
         set2 = packet;
         if (set1.length() > 0 && set2.length() > 0) {
           xbeeSettings(set1, set2);
-          uploaded = true;
+          nuploaded++;
           set1 = "";
           set2 = "";
         }
@@ -737,12 +747,16 @@ void processXBee() {
       default:
         break;
     }
-    // If a packet was uploaded, do not parse another one
-    // in this function call to avoid spending an extended
-    // time in this routine.
-    //if (uploaded) break;
+    // If a packet was uploaded, do not parse another one in this
+    // function call to avoid spending an extended time in this
+    // routine.  Note if XBee packets come in faster than they can
+    // be uploaded to the server, we can get stuck in this loop
+    // indefinitely without forcing a break.  If delays are caused
+    // by a bad network connection, the network maintenance/restart
+    // routines would then never get called...
+    if (nuploaded >= 1) break;
     // Use below to avoid compiler warning if above commented...
-    (void)uploaded;
+    //(void)nuploaded;
   }
 }
 
@@ -1000,6 +1014,37 @@ void ethernetSetup() {
 
   ethernetBegin();
 
+  // Sometimes a second attempt will solve DHCP issues
+  if (!ethStatus.connected()) {
+    Serial.print(F("Re-attempting to connect to the network..."));
+    delay(1000);
+    int stat = Ethernet.maintain();
+    switch (stat) {
+      case 0:
+        // No action performed
+        // If ethernet was not successfully connected before,
+        // this should not occur?
+        break;
+      case 1:
+        Serial.println(F("Ethernet: DHCP renewal failed."));
+        break;
+      case 2:
+        Serial.println(F("Ethernet: DHCP renewal succeeded."));
+        break;
+      case 3:
+        Serial.println(F("Ethernet: DHCP rebind failed."));
+        break;
+      case 4:
+        Serial.println(F("Ethernet: DHCP rebind succeeded."));
+        break;
+      default:
+        Serial.print(F("Ethernet: Unknown DHCP error ("));
+        Serial.print(stat);
+        Serial.println(F(")."));
+        break;
+    }
+  }
+
   if (ethStatus.connected()) {
     updateClockFromNTP();
   }
@@ -1221,9 +1266,22 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
 {
   // Keep track of POST attempts (successful or not)
   packetsUploaded++;
-#ifdef DEBUG
+  #ifdef DEBUG
   writeDebugLog(F("Fxn: postPage()"));
-#endif
+  #endif
+
+  // If we do not have IP address, we will be unable to upload data
+  // to server, so we do not even attempt a network connection.
+  // The ethernetMaintain() routine should eventually try to reconnect.
+  IPAddress ip = Ethernet.localIP();
+  if (ip == IPAddress(0ul) || ip == IPAddress(0xFFFFFFFFul)) {
+    // Flag bad ethernet connection
+    ethStatus.failed();
+    Serial.println(F("Remote server upload failed: no internet connection"));
+    return 0;
+  }
+  
+  
   //int inChar;
   char outBuf[200];
   EthernetClient client;

@@ -203,6 +203,12 @@ void setup() {
     #endif
   }
   
+  if (getModeCoord() && !ethernetConnected()) {
+    Serial.println(F("Retrying to connect ethernet...."));
+    ethernetBegin();
+    ethernetMaintain();
+  }
+  
   //Serial.println(F("DEBUG: Ethernet disabled."));
   //digitalWrite(ETHERNET_EN, LOW);
   
