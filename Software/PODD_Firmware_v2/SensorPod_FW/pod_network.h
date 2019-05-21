@@ -29,17 +29,10 @@ String getXBeeBufferPacket();
 void processXBee();
 bool submitXBeeCommand(const String cmd);
 
-void xbeeGetMac(byte * macL, uint8_t max_mac_len);
-void xbeeConfig();
 void xbeeRate(String incoming);
 void xbeeSettings(String incoming, String incoming2);
 void xbeeReading(String incoming);
-bool xbeeCommandMode();
-void xbeeRequestSetting(String setting);
-void xbeeUpdateSetting(String setting, String val);
-bool xbeeWriteSettings();
-void xbeeCloseCommand();
-void xbeeGetNetwork(byte * netID);
+
 
 //--------------------------------------------------------------------------------------------- [Upload Support]
 
@@ -50,7 +43,7 @@ String getMACAddressString();
 
 void ethernetSetup();
 bool ethernetBegin();
-//bool ethernetOnline();
+bool ethernetHasIPAddress();
 bool ethernetConnected();
 void ethernetMaintain();
 //String formatTime();

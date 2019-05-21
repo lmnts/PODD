@@ -74,13 +74,10 @@ void setup() {
   // Temperature/humidity sensor testing
   testTemperatureSensor(-1,1000);
   // Particulate matter sensor testing
-  //testPMSensor(-1,5000,10000,10000);
-  testPMSensor(-1,5000,5000,5000);
-  //testPMSensor(-1,500,1,1);
+  testPMSensor(-1,5000,10000,10000);
   #endif
   
   Serial.println(LINE);
-  //Serial.println((const __FlashStringHelper*)LINE);
   Serial.println(F("Starting setup...."));
   delay(2000);
   
@@ -91,9 +88,6 @@ void setup() {
   Wire.begin();
   
   Serial.println(F("Setting up RTC...."));
-  //setupRTC();
-  //Serial.print(F("  Current date/time: "));
-  //Serial.println(formatDateTime());
   initRTC();
   Serial.print(F("  Current date/time: "));
   Serial.println(getLocalDateTimeString());
@@ -103,15 +97,13 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
   
   Serial.println(F("Setting up sensors...."));
-  //sensorSetup();
   initSensors();
   printSensorCheck();
   Serial.println(F("Testing sensors (10 seconds)...."));
   testSensors(10,1000);
   //testSensors(-1,1000);
   
-  //Serial.println(F("DEBUG:"));
-  //serialCharPrompt(F("Waiting for keypress"));
+  //serialCharPrompt(F("DEBUG: Waiting for keypress"));
   
   // SD uses > 100 mA when initializing/writing, but < 1 mA when idle
   Serial.println(F("Setting up SD...."));
@@ -134,7 +126,6 @@ void setup() {
 
   // Prompt for interactive menu, proceed to menu if user responds.
   // Times out in ~30 seconds if no response.
-  //podIntro();
   interactivePrompt();
   
   Serial.println(F("Configuring XBee...."));
@@ -161,7 +152,6 @@ void setup() {
   setupSDLogging();
   
   Serial.println(F("Starting sensor timers...."));
-  //Serial.println(F("  Extra delays here to avoid timer pileup."));
   setupSensorTimers();
 
   if (getModeCoord()) {
@@ -170,19 +160,7 @@ void setup() {
   }
   
   // power optimizations
-  // Sensor power handling moved to setupSensorTimers()
-  //if (getRateSound() <= 0) {
-  //  Serial.println(F("Disabling sound sampling...."));
-  //  stopSoundSampling();
-  //}
-  //if (getRatePM() <= 0) {
-  //  Serial.println(F("Powering down particulate matter sensor...."));
-  //  powerOffPMSensor();
-  //}
-  //if(getRatePM() > 120) {
-  //  Serial.println(F("Powering down particulate matter sensor until next reading...."));
-  //  powerOffPMSensor();
-  //}
+  // Sensor power handling is in setupSensorTimers()
   if(!getModeCoord()){
     //Disable Ethernet for Drones
     Serial.println(F("Powering down ethernet...."));
@@ -209,20 +187,10 @@ void setup() {
     ethernetMaintain();
   }
   
-  //Serial.println(F("DEBUG: Ethernet disabled."));
-  //digitalWrite(ETHERNET_EN, LOW);
-  
   // turn off LED to save power
   // by the time we get here, the user has either configured the SensorPod
   // or it's been around a minute and a half and the setup has timed out
   digitalWrite(LED_PIN, LOW);
-  
-  // Begin background process to pull data from the XBee for later
-  // processing.  Currently only necessary for the coordinator.
-  //if(getModeCoord()){
-  //  Serial.println(F("Starting coordinator XBee monitoring process...."));
-  //  startXBee();
-  //}
   
   Serial.println();
   Serial.println(F("Initialization and setup complete.  The PODD will now begin taking data."));
@@ -240,11 +208,11 @@ void setup() {
 
 //--------------------------------------------------------------------------------------------- [loop]
 void loop() {
-  // digitalWrite(CP, HIGH);
-  // checks to see if start date and time have passed or not:
+  // Check ethernet connection.  Reinitialize if necessary.
   if(getModeCoord()) {
     ethernetMaintain();
   }
-  
+
+  // Sample sensors, log data to SD, upload to server, etc.
   handleLoopLogging();
 }

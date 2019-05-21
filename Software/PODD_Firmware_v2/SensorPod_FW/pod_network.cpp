@@ -2,6 +2,7 @@
 /*
    pod_network.cpp
    2017 - Nick Turner and Morgan Redfield
+   2018 - Chris Savage
    Licensed under the AGPLv3. For full license see LICENSE.md
    Copyright (c) 2017 LMN Architects, LLC
 
@@ -65,30 +66,16 @@ volatile bool xbeeBufferHold = false;
 
 String set1;
 String set2;
-//#define NETID_LEN 4
-//byte network[] = {0xA, 0xB, 0xC, 0xD};
 
 // Ethernet connection settings
-#define MAC_ADDRESS_LEN 6
-byte ethMACAddress[MAC_ADDRESS_LEN];
-#define MAC_LEN 6
-byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}; // MAC address can be anything, as long as it is unique on network
-//char timeServer[] =  "time.nist.gov"; // government NTP server
-//#define timeServer "time.nist.gov"
-#define localPort 8888
-//#define NTP_PACKET_SIZE 48
-//byte packetBuffer[NTP_PACKET_SIZE];
-EthernetUDP Udp;
-#define serverPort 80
-char pageName[] = "/LMNSensePod.php"; // Name of submission page. Log into EC2 Server and navigate to /var/www/html to view
-int totalCount = 0;
-char params[200];// insure params is big enough to hold your variables
-#define delayMillis 10000UL // Delay between establishing connection and making POST request
-unsigned long thisMillis = 0;
-unsigned long lastMillis = 0;
 #define WIZ812MJ_ES_PIN 20 // WIZnet SPI chip-select pin
 #define WIZ812MJ_RESET_PIN 9 // WIZnet reset pin
-bool online = false;
+#define MAC_ADDRESS_LEN 6
+byte ethMACAddress[MAC_ADDRESS_LEN];
+const char SERVER_PAGE_NAME[] = "/LMNSensePod.php"; // Name of submission page. Log into EC2 Server and navigate to /var/www/html to view
+#define SERVER_PORT 80
+#define LOCAL_PORT 8888
+EthernetUDP Udp;
 
 // Maximum amount of time to allow ethernet to obtain connection.
 #define ETHERNET_START_TIMEOUT 5000
@@ -116,8 +103,8 @@ unsigned long packetsUploaded = 0;
 
 // Minimum amount of time between network reconnect attempts [ms].
 // Prevents frequent restarts if the network is unavailable.
-#define NETWORK_RECONNECT_INTERVAL (5*60000UL)
-//#define NETWORK_RECONNECT_INTERVAL (25000UL)
+//#define NETWORK_RECONNECT_INTERVAL (5*60000UL)
+#define NETWORK_RECONNECT_INTERVAL (30000UL)
 // Number of consecutive unsuccessful network interactions before
 // attempting a network reconnect.  Occasional fails may be due
 // to network instability or congestion instead of an unconnected
@@ -156,8 +143,7 @@ struct NetworkStatus {
     if ((tstart > 0) && (t0 - tstart < NETWORK_RECONNECT_INTERVAL)) return false;
     // If we do not have an IP address, network needs reinitialization
     // (do not wait for multiple network interaction failures).
-    IPAddress ip = Ethernet.localIP();
-    if (ip == IPAddress(0ul) || ip == IPAddress(0xFFFFFFFFul)) return true;
+    if (!ethernetHasIPAddress()) return true;
     // If network interactions have consistently failed, try
     // reinitializing network.  This may be a server issue rather
     // than a network issue, so trying not to be too aggressive with
@@ -761,77 +747,6 @@ void processXBee() {
 }
 
 
-void xbeeConfig() {
-  String meshMode;
-  if (getModeCoord()) {
-    meshMode = "1"; //coordinator
-  } else {
-    meshMode = "0"; //drone
-  }
-
-  // Use XBee Grove dev board + XCTU exclusively to configure
-  // XBee network, aside from coordinator mode: current firmware
-  // not set up to provide access to many of the useful settings
-  // and it is too easy to misconfigure the XBee.
-  //xbeeUpdateSetting("CE","0"); // Set device to drone before entering new network.
-  //xbeeUpdateSetting("ID", getNetID());
-
-  delay(1100);
-  xbee.print("+++");
-  delay(1100);
-  Serial.print((char)xbee.read());
-  xbee.print("ATCE " + meshMode + "\r");
-  delay(100);
-  Serial.print((char)xbee.read());
-  xbee.print("ATWR\r");
-  delay(100);
-  Serial.print((char)xbee.read());
-  xbee.print("ATCN\r");
-  delay(100);
-  while (xbee.available())
-    xbee.read();
-
-}
-
-void xbeeGetMac(byte * macL, uint8_t max_mac_len) {
-  if (max_mac_len < 6) {
-    Serial.println(F("mac array is too short"));
-    return;
-  }
-
-  //byte macL[6];
-  xbeeCommandMode();
-  //Serial.println();
-  xbee.print("ATSL\r");
-  xbee.readBytes(macL, 6);
-  //xbee.print("ATCN\r");
-  delay(100);
-  while (xbee.available())
-    //Serial.print((char)xbee.read());
-    xbee.read();
-  //Serial.println();
-  //for(int x = 0; x<sizeof(macL);x++)
-  //Serial.println(macL[x]);
-  //return macL;
-}
-
-void xbeeGetNetwork(byte * netID, uint8_t max_net_len) {
-  //Serial.println(sizeof(netID));
-  if (max_net_len < 4) {
-    Serial.println(F("Network ID array is too short"));
-    return;
-  }
-
-  xbeeRequestSetting("ID");
-  xbee.readBytes(netID, 5);
-  while (xbee.available()) {
-    Serial.println(F("Leftover Buffer: "));
-    Serial.write((char)xbee.read());
-  }
-  xbeeCloseCommand();
-  //Serial.write(netID, sizeof(netID));
-}
-
 void xbeeRate(String incoming) {
   String did, sensor, val, datetime;
   int one, two, three, four;
@@ -906,56 +821,6 @@ void xbeeReading(String incoming) {
 }
 
 
-void xbeeRequestSetting(String setting) {
-  xbeeCommandMode();
-  xbee.print("AT" + setting + "\r");
-  delay(200);
-
-}
-
-void xbeeUpdateSetting(String setting, String val) {
-  xbeeCommandMode();
-  xbee.print("AT" + setting + " " + val + "\r");
-  delay(100);
-  while (xbee.available()) {
-    xbee.read();
-  }
-  xbeeWriteSettings();
-  xbeeCloseCommand();
-}
-
-bool xbeeCommandMode() {
-  byte ack[2];
-  delay(1100);
-  xbee.print("+++");
-  delay(1100);
-  xbee.readBytes(ack, 2);
-  if (ack[0] != 'O' && ack[1] != 'K') {
-    return false;
-  }
-  while (xbee.available())
-    xbee.read();
-  return true;
-}
-
-bool xbeeWriteSettings() {
-  byte ack[2];
-  xbee.print("ATWR\r");
-  delay(100);
-  xbee.readBytes(ack, 2);
-  if (ack[0] != 'O' && ack[1] != 'K') {
-    return false;
-  }
-  return true;
-}
-
-void xbeeCloseCommand() {
-  xbee.print("ATCN\r");
-  delay(100);
-  while (xbee.available())
-    xbee.read();
-}
-
 //--------------------------------------------------------------------------------------------- [Upload Support]
 
 /* Sets the ethernet MAC address using the XBee serial number. */
@@ -1004,6 +869,7 @@ void ethernetSetup() {
   digitalWrite(WIZ812MJ_RESET_PIN, LOW);
   delay(2);
   digitalWrite(WIZ812MJ_RESET_PIN, HIGH);
+  delay(2);
 
   pinMode(WIZ812MJ_ES_PIN, OUTPUT);
   Ethernet.init(WIZ812MJ_ES_PIN);
@@ -1016,7 +882,7 @@ void ethernetSetup() {
 
   // Sometimes a second attempt will solve DHCP issues
   if (!ethStatus.connected()) {
-    Serial.print(F("Re-attempting to connect to the network..."));
+    Serial.print(F("Re-attempting to connect to the network...."));
     delay(1000);
     int stat = Ethernet.maintain();
     switch (stat) {
@@ -1051,19 +917,19 @@ void ethernetSetup() {
 }
 
 bool ethernetBegin() {
-  //Serial.println(F("Starting ethernet..."));
+  //Serial.println(F("Starting ethernet...."));
 
-  // Reset ethernet chip
-  digitalWrite(WIZ812MJ_RESET_PIN, LOW);
-  delay(1);
-  digitalWrite(WIZ812MJ_RESET_PIN, HIGH);
-  delay(1);
-
-  // Power cycle
+  // Power cycle ethernet
   //digitalWrite(ETHERNET_EN,LOW);
   //delay(10);
   //digitalWrite(ETHERNET_EN,HIGH);
   //delay(10);
+
+  // Reset ethernet chip
+  digitalWrite(WIZ812MJ_RESET_PIN, LOW);
+  delay(2);
+  digitalWrite(WIZ812MJ_RESET_PIN, HIGH);
+  delay(2);
 
   //Ethernet.init(WIZ812MJ_ES_PIN);
 
@@ -1071,37 +937,32 @@ bool ethernetBegin() {
   //Serial.print(F("Ethernet link status: "));
   //Serial.println(Ethernet.linkStatus());
 
-  //unsigned long eth_timeout = 10000;
-  //xbeeGetMac(mac, MAC_LEN);
-  //Serial.println(F("got mac..."));
-  //Serial.write(mac,6);
-  //if (!Ethernet.begin(mac, eth_timeout)) {
   if (!Ethernet.begin(ethMACAddress,ETHERNET_START_TIMEOUT)) {
-    //online = false;
     ethStatus.restarted(false);
     Serial.println(F("Ethernet initialization failed.  Readings will not be pushed to remote"));
     Serial.println(F("database until connection can be established."));
     return false;
   } else {
-    //online = true;
     ethStatus.restarted(true);
     Serial.print(F("Ethernet initialized. IP: "));
     Serial.println(Ethernet.localIP());
-    Udp.begin(localPort);
-    // Update time only in initialization routine instead of
-    // for every network reconnect.  There is a separate process
-    // that will make regular NTP updates.
-    //getTimeFromWeb();
-    //updateClockFromNTP();
+    Udp.begin(LOCAL_PORT);
     return true;
   }
   
 }
 
 
-//bool ethernetOnline() {
-//  return online;
-//}
+/* Indicates if the ethernet currently has a valid IP address.
+   A false indicates the ethernet is not connected to the network.
+   However, true does not necessarily mean the ethernet is
+   connected to the network (only that it was connected at some
+   point previously). */
+bool ethernetHasIPAddress() {
+  IPAddress ip = Ethernet.localIP();
+  if (ip == IPAddress(0ul) || ip == IPAddress(0xFFFFFFFFul)) return false;
+  return true;
+}
 
 
 /* Indicates if last network interaction was successful. */
@@ -1113,7 +974,7 @@ bool ethernetConnected() {
 void ethernetMaintain() {
   // Restart ethernet if not have had recent successful connection
   if (ethStatus.needsRestart()) {
-    Serial.println(F("Extended period without successful internet connection.  Restarting ethernet..."));
+    Serial.println(F("Extended period without successful internet connection.  Restarting ethernet...."));
     ethernetBegin();
     return;
   }
@@ -1149,14 +1010,8 @@ void ethernetMaintain() {
 void saveReading(String lstr, String rstr, String atstr, String gtstr, String sstr, String c2str, String p1str, String p2str, String cstr) {
   time_t utc = getUTC();
   String TS(utc);
-  //String D = formatDate();
-  //String D = getDBDateString(utc);
-  //String T = formatTime();
-  //String T = getDBTimeString(utc);
-  //String DT = D + " " + T;
   String DT = getDBDateTimeString(utc);
   // Use local time in log file, but also include unix timestamp
-  //String sensorData = (D + ", " + T + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
   String sensorData = (TS + ", " + DT + ", " + lstr + ", " + rstr + ", " + atstr + ", " + gtstr + ", " + sstr + ", " + c2str + ", " + p1str + ", " + p2str + ", " + cstr);
   logDataSD(sensorData);
 
@@ -1182,25 +1037,23 @@ void saveReading(String lstr, String rstr, String atstr, String gtstr, String ss
 
 void postReading(String DID, String ST, String R, String TS, String DT)
 {
-#ifdef DEBUG
+  #ifdef DEBUG
   writeDebugLog(ST);
-#endif
+  #endif
   if (getModeCoord()) {
     // String in temp string is data to be submitted to MySQL
-    char p[200];
     String amp = "&";
-    //String Datetime = getStringDatetime();
-    String temp = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "Reading=" + R + amp + "TimeStamp=" + TS + amp + "ReadTime=" + DT;
-    temp.toCharArray(p, 200);
-    if (!postPage(getServer(), serverPort, pageName, p)) {
-      //Serial.println(F("Failed to upload sensor reading to remote. \n"));
+    String content = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "Reading=" + R + amp + "TimeStamp=" + TS + amp + "ReadTime=" + DT;
+    //char p[200];
+    //content.toCharArray(p, 200);
+    //if (!postPage(getServer(), SERVER_PORT, SERVER_PAGE_NAME, p)) {
+    if (!postPage(getServer(), SERVER_PORT, SERVER_PAGE_NAME, content.c_str())) {
       Serial.print("[" + String(packetsUploaded) + "] ");
       Serial.println(F("Failed to upload sensor reading to remote."));
-#ifdef DEBUG
+      #ifdef DEBUG
       writeDebugLog(F("Failed to upload sensor reading to remote. \n"));
-#endif
+      #endif
     } else {
-      //Serial.println(F("Uploaded sensor reading."));
       Serial.print("[" + String(packetsUploaded) + "] ");
       Serial.println(F("Uploaded sensor reading (") + ST + F(" @ ") + DID + F(")."));
     }
@@ -1214,12 +1067,9 @@ void postReading(String DID, String ST, String R, String TS, String DT)
 void updateRate(String DID, String ST, String R, String DT)
 {
   if (getModeCoord()) {
-    char p[200];
     String amp = "&";
-    //String Datetime = getStringDatetime();
-    String temp = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "SampleRate=" + R + amp + "RateChange=" + DT;
-    temp.toCharArray(p, 200);
-    if (!postPage(getServer(), serverPort, pageName, p)) {
+    String content = "DeviceID=" + DID + amp + "SensorType=" + ST + amp + "SampleRate=" + R + amp + "RateChange=" + DT;
+    if (!postPage(getServer(), SERVER_PORT, SERVER_PAGE_NAME, content.c_str())) {
       Serial.print("[" + String(packetsUploaded) + "] ");
       Serial.println(F("Failed to update sensor rate on remote."));
     } else {
@@ -1236,14 +1086,11 @@ void updateRate(String DID, String ST, String R, String DT)
 
 void updateConfig(String DID, String Location, String Coordinator, String Project, String Rate, String Setup, String Teardown, String Datetime, String NetID)
 {
-  //Datetime = getStringDatetime();
   Datetime = getDBDateTimeString();
   if (getModeCoord()) {
-    char p[200];
     String amp = "&";
-    String temp = ("DeviceID=" + DID + amp + "Project=" + Project + amp + "Coordinator=" + Coordinator + amp + "UploadRate=" + Rate + amp + "Location=" + Location + amp + "SetupDate=" + Setup + amp + "TeardownDate=" + Teardown + amp + "ConfigChange=" + Datetime + amp + "NetID=" + NetID);
-    temp.toCharArray(p, 200);
-    if (!postPage(getServer(), serverPort, pageName, p)) {
+    String content = ("DeviceID=" + DID + amp + "Project=" + Project + amp + "Coordinator=" + Coordinator + amp + "UploadRate=" + Rate + amp + "Location=" + Location + amp + "SetupDate=" + Setup + amp + "TeardownDate=" + Teardown + amp + "ConfigChange=" + Datetime + amp + "NetID=" + NetID);
+    if (!postPage(getServer(), SERVER_PORT, SERVER_PAGE_NAME, content.c_str())) {
       Serial.print("[" + String(packetsUploaded) + "] ");
       Serial.println(F("Failed to update device configuration on remote."));
     } else {
@@ -1273,20 +1120,18 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
   // If we do not have IP address, we will be unable to upload data
   // to server, so we do not even attempt a network connection.
   // The ethernetMaintain() routine should eventually try to reconnect.
-  IPAddress ip = Ethernet.localIP();
-  if (ip == IPAddress(0ul) || ip == IPAddress(0xFFFFFFFFul)) {
+  if (!ethernetHasIPAddress()) {
     // Flag bad ethernet connection
     ethStatus.failed();
     Serial.println(F("Remote server upload failed: no internet connection"));
     return 0;
   }
   
-  
   //int inChar;
   char outBuf[200];
   EthernetClient client;
 
-  //Serial.print(F("connecting..."));
+  //Serial.print(F("connecting...."));
 
   int stat;
   if ((stat = client.connect(domainBuffer, thisPort)) == 1)
@@ -1342,7 +1187,6 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
     ethStatus.failed();
     
     // Indicate error.  Note most network errors are '0' (uninformative).
-    //Serial.println(F("failed"));
     switch (stat) {
       case 1:
         // Success
@@ -1377,74 +1221,8 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
   return 1;
 }
 
-/*
-void getTimeFromWeb() {
-  sendNTPpacket(timeServer); // send an NTP packet to a time server
 
-  // wait to see if a reply is available
-  delay(1000);
-  if (Udp.parsePacket() == NTP_PACKET_SIZE) {
-    // We've received a packet, read the data from it
-    Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
-
-    // the timestamp starts at byte 40 of the received packet and is four bytes,
-    // or two words, long. First, extract the two words:
-
-    unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
-    unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
-    // combine the four bytes (two words) into a long integer
-    // this is NTP time (seconds since Jan 1 1900):
-    unsigned long secsSince1900 = highWord << 16 | lowWord;
-    Serial.print(F("Seconds since Jan 1 1900 = "));
-    Serial.println(secsSince1900);
-
-    // now convert NTP time into everyday time:
-    Serial.print(F("Unix time = "));
-    // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
-    const unsigned long seventyYears = 2208988800UL;
-    //const unsigned long sevenHours = 25200UL; //Time zone difference.
-    // subtract seventy years:
-    //unsigned long epoch = secsSince1900 - seventyYears - sevenHours;
-    time_t utc = secsSince1900 - seventyYears;
-    Serial.println(utc);
-    // print Unix time:
-    //if (epoch > SEC_2017) {
-    //  setRTCTime(epoch);
-    //  setUTC(utc);
-    //}
-    if (utc > SEC_2017) {
-      setUTC(utc);
-    }
-
-  } else Serial.println(F("Unable to get server time"));
-}
-*/
-
-/*
-// send an NTP request to the time server at the given address
-void sendNTPpacket(const char* address) {
-  // set all bytes in the buffer to 0
-  memset(packetBuffer, 0, NTP_PACKET_SIZE);
-  // Initialize values needed to form NTP request
-  // (see URL above for details on the packets)
-  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
-  packetBuffer[1] = 0;     // Stratum, or type of clock
-  packetBuffer[2] = 6;     // Polling Interval
-  packetBuffer[3] = 0xEC;  // Peer Clock Precision
-  // 8 bytes of zero for Root Delay & Root Dispersion
-  packetBuffer[12]  = 49;
-  packetBuffer[13]  = 0x4E;
-  packetBuffer[14]  = 49;
-  packetBuffer[15]  = 52;
-
-  // all NTP fields have been given values, now
-  // you can send a packet requesting a timestamp:
-  Udp.beginPacket(address, 123); //NTP requests are to port 123
-  Udp.write(packetBuffer, NTP_PACKET_SIZE);
-  Udp.endPacket();
-}
-*/
-
+//--------------------------------------------------------------------------------------------- [Upload Support]
 
 /* Attempt to update the RTC with the current time from an NTP server. */
 void updateClockFromNTP() {
@@ -1463,6 +1241,16 @@ void updateClockFromNTP() {
   packet[14] = 49;
   packet[15] = 52;
 
+  // If we do not have IP address, we will be unable to connect to
+  // NTP server.  The ethernetMaintain() routine should eventually
+  // try to reconnect.
+  if (!ethernetHasIPAddress()) {
+    // Flag bad ethernet connection
+    ethStatus.failed();
+    Serial.println(F("Warning: Failed to connect to NTP server (no internet connection)."));
+    return;
+  }
+  
   // Send request packet to NTP server.  Do nothing if cannot connect.
   if (!Udp.beginPacket(NTP_SERVER,NTP_PORT)) {
     Serial.println(F("Warning: Failed to connect to NTP server."));

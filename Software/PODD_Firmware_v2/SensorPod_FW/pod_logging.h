@@ -11,11 +11,6 @@
 
 #include "Arduino.h"
 
-#define DS13074_CS_PIN 17 // DeadOn RTC Chip-select (CS) pin
-#define SD_CHIP_SELECT 10 // SD card chip select
-#define SEC_2017 1482192000
-//#define DEBUG 1 // Debug flag
-
 #ifdef DEBUG
 void writeDebugLog(String message);
 #endif
@@ -29,12 +24,6 @@ void sdDateTime(uint16_t* date, uint16_t* time);
 void setupSensorTimers();
 void setupClockTimers();
 void handleLoopLogging();
-//String formatTime();
-//String formatDate();
-//String formatDateTime();
-//String getStringDatetime();
-//void printTime();
-//void setRTCTime(unsigned long epoch);
 
 // log readings
 void humidityLog();

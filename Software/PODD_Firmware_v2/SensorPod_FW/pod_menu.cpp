@@ -51,7 +51,6 @@ static const char CONTINUE_PROMPT[] PROGMEM = "(hit any key to continue)";
 //static const char MENU_INDENT2[] = "        ";
 //static const char CONTINUE_PROMPT[] = "(hit any key to continue)";
 
-// 
 
 
 // Functions ===================================================================
@@ -124,9 +123,6 @@ void mainMenu() {
     Serial.println(F("  (I) Compilation info"));
     //Serial.println(F("  "));
     Serial.println();
-    // Enter old configuration menu
-    Serial.println(F("  (O) Old configuration menu"));
-    Serial.println();
     // Leave menu and enter automatic mode
     Serial.println(F("  (Q) Quit interactive mode"));
     Serial.println();
@@ -178,12 +174,6 @@ void mainMenu() {
         Serial.println(F("  Firmware version:    " CONFIG_VERSION));
         printCompilationInfo("  ","");
         Serial.println();
-        break;
-      case 'O':
-      case 'o':
-        if (podConfigChanged()) savePodConfig();
-        podIntro();
-        //showContinuePrompt = false;
         break;
       case 'Q':
       case 'q':
@@ -446,7 +436,7 @@ void configureNetworkSettings() {
   
   b = serialYesNoPrompt(F("(Re)initialize ethernet connection (y/n)?"),true,false);
   if (b) {
-    Serial.println(F("Initializing ethernet..."));
+    Serial.println(F("Initializing ethernet...."));
     ethernetBegin();
   }
   

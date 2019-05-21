@@ -42,20 +42,15 @@ struct PodConfigStruct {
 };
 
 
-void podIntro();
-
-int podConfig();
-bool podConfigChanged();
-void setPodConfigChanged();
-void clearPodConfigChanged();
 void loadPodConfig();
 void savePodConfig();
 PodConfigStruct& getPodConfig();
+bool podConfigChanged();
+void setPodConfigChanged();
+void clearPodConfigChanged();
 
 void replaceSettingString(String s, char arr[], size_t len, String label);
 void updateSensorTime(String label, int *v);
-
-void updateTimer(String sensor);
 
 char * getServer();
 char * getDevID();

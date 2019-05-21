@@ -146,39 +146,6 @@ time_t getLocalTime() {
 /* Loads timezone information from EEPROM if available, otherwise sets to
    Pacific timezone with DST. */
 void initTimezone() {
-  /*
-  // NOTE: No built-in ability to see if timezone was already written
-  // to EEPROM.  We instead check if first timezone rule label is 3-5
-  // alphabetical characters.  Timezone class does not give access to
-  // timezone rules, so we check memory locations directly: THIS CHECK
-  // WILL BREAK IF TIMEZONE LIBRARY STORAGE FORMAT CHANGES!!!
-  char label[6];
-  uint8_t label_len;
-  bool valid;
-  for (int k=0; k < 6; k++) label[k] = EEPROM.read(EEPROM_CLOCK_ADDR + k);
-  label_len = 0;
-  valid = true;
-  for (int k=0; k < 6; k++) {
-    if (label[k] == 0) break;
-    label_len++;
-    if (!isalpha(label[k])) {
-      valid = false;
-      break;
-    }
-  }
-  if (label_len > 5) valid = false;
-  
-  // Looks like timezone saved to EEPROM
-  if (valid) {
-    timezone.readRules(EEPROM_CLOCK_ADDR);
-  } else {
-    // Already initialized to Pacific time
-    //TimeChangeRule usPST = {"PST", First, Sun, Nov, 2, -480};
-    //TimeChangeRule usPDT = {"PDT", Second, Sun, Mar, 2, -420};
-    //timezone.setRules(usPST, usPDT);
-  }
-  */
-
   // Load clock config from EEPROM
   for (size_t k = 0; k < sizeof(clockConfig); k++) {
       *((char*)&clockConfig + k) = EEPROM.read(EEPROM_CLOCK_ADDR + k);

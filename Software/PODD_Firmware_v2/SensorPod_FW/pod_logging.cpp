@@ -18,7 +18,6 @@
 #include "pod_network.h"
 #include "pod_sensors.h"
 
-//#include <SparkFunDS3234RTC.h>
 #include <SD.h>
 
 // This library must be modified to increase the maximum number
@@ -41,6 +40,7 @@ int startMonth = 0, startDay = 0, startHr = 0, startMinute = 0;
 #define PRINT_USA_DATE //U.S. format mm/dd/yy
 
 // SD card
+#define SD_CHIP_SELECT 10
 File dataFile;
 File setFile;
 char timestamp[30];
@@ -48,38 +48,19 @@ char timestamp[30];
 File logFile;
 #endif
 
-// declaring strings
-String amp;
 
-/*
-void setupRTC() {
-    // RTC 3234
-  rtc.begin(DS13074_CS_PIN);
-  // NOTE: time is set if/when NTP is established
-  
-  // Get time/date values, so we can set alarms
-  rtc.update();
-  // NOTE: Interrupt pin not attached and alarms not used,
-  // so we disable this code [CS 2018-08-25]
-  // Configure Alarm(s):
-  //rtc.enableAlarmInterrupt();
-  //rtc.setAlarm1(logint);
-  // Set alarm2 to alert when minute increments by 1
-  //bool alarm = true;
-  //rtc.setAlarm2(0, 8, 1, alarm); // Alarm2 8:00 on Monday (1)
-}
-*/
+//----------------------------------------------------------------------
 
 void setupPodSD() {
   // SD CARD
-  Serial.print(F("Initializing SD card..."));
+  Serial.print(F("Initializing SD card...."));
   pinMode(SD_CHIP_SELECT, OUTPUT);
   // see if the card is present and can be initialized:
   if (!SD.begin(SD_CHIP_SELECT)) {
-    Serial.println(F("Card failed, or not present. Readings will not be stored locally."));
+    Serial.println(F(" Card failed, or not present. Readings will not be stored locally."));
   }
   else {
-    Serial.println(F("card initialized"));
+    Serial.println(F(" card initialized"));
   }
 }
 
@@ -109,31 +90,14 @@ void setupSDLogging() {
   SdFile::dateTimeCallback(sdDateTime);
   dataFile = SD.open(filename,FILE_WRITE);
   
-  // create a new file for data logging
-  /*
-  char filename[] = "LOG000.CSV";
-  for (uint16_t i = 0; i < 1000; i++) {
-    filename[3] = i / 100 + '0';
-    filename[4] = (i % 100)/10 + '0';
-    filename[5] = i % 10 + '0';
-    if (! SD.exists(filename)) {
-      // only open a new file if it doesn't exist
-      SdFile::dateTimeCallback(sdDateTime);
-      dataFile = SD.open(filename, FILE_WRITE);
-      break;  // leave the loop!
-    }
-  }
-  */
-  
-  /*if (! dataFile) {
-    Serial.print("Error opening ");
+  /*if (!dataFile) {
+    Serial.print(F("Error opening "));
     Serial.println(filename);
     return;
   }*/
 
   Serial.print(F("Logging to: "));
   Serial.println(filename);
-  //String header = F("Date, Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
   String header = F("Timestamp, Date/Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
   dataFile.println(header);
 }
@@ -154,7 +118,7 @@ void writeSDConfig(String DID, String Location, String Coordinator, String Proje
   SdFile::dateTimeCallback(sdDateTime);
   // Save to SD
   if (! SD.exists(setname)) {
-    Serial.println(F("No settings file detected. Creating..."));
+    Serial.println(F("No settings file detected. Creating...."));
     // only open a new file if it doesn't exist
     setFile = SD.open(setname, FILE_WRITE);
     delay(1000);
@@ -176,10 +140,6 @@ void writeSDConfig(String DID, String Location, String Coordinator, String Proje
   String settingData = "";
   time_t utc = getUTC();
   String TS(utc);
-  //String D = formatDate();
-  //String D = getDBDateString(utc);
-  //String T = formatTime();
-  //String T = getDBTimeString(utc);
   String DT = getDBDateTimeString(utc);
   String setheader = "Timestamp, Date/Time, Device ID, Project, Location, Coordinator?, Network Code, Setup Date, Teardown Date, Upload Rate, Light, RH, Globe Temp, Sound, CO2, Particle, CO"; // FILE HEADER
 
@@ -253,7 +213,6 @@ void setupSensorTimers() {
   
   // Particulate matter sensor: turn off if not using
   // or if long time between measurements.
-  //if(!getModeCoord()) {
     if(getRatePM() > 120) {
       stopPMSensor();
       powerOffPMSensor();
@@ -269,9 +228,6 @@ void setupSensorTimers() {
       stopPMSensor();
       powerOffPMSensor();
     }
-  //} else {
-  //  Alarm.timerRepeat(getRatePM(), particleLog);
-  //}
 }
 
 /* Set up timers for clock-related tasks, like updating from NTP
@@ -283,120 +239,24 @@ void setupClockTimers() {
   }
 }
 
-/*
-String formatTime(){
-  rtc.update();
-  char sbuffer[16];
-  // Switch to 24-hour mode, if necessary
-  int h = rtc.hour() + (rtc.is12Hour() && rtc.pm() ? 12 : 0);
-  sprintf(sbuffer,"%02d:%02d:%02d",h,rtc.minute(),rtc.second());
-  return sbuffer;
-  
-  //String h, colon, mt, s;
-  //h = String(rtc.hour(), DEC);
-  //colon = String(':');
-  //mt = String(rtc.minute(), DEC);
-  //s = String(rtc.second(), DEC);
-  //return (h + colon + mt + colon + s);
-}
-*/
 
-/*
-String formatDate(){
-  rtc.update();
-  char sbuffer[16];
-  sprintf(sbuffer,"20%02d-%02d-%02d",rtc.year(),rtc.month(),rtc.date());
-  return sbuffer;
-  
-  //String y, slash, m, d;
-  //d = String (rtc.date(), DEC);
-  //y = "20" + String (rtc.year(), DEC);
-  //slash = String ('-');
-  //m = String(rtc.month(), DEC);
-  //return (y + slash + m + slash + d);
-}
-*/
-
-/*
-String formatDateTime() {
-  return formatDate() + " " + formatTime();
-}
-*/
-
-/*
-String getStringDatetime() {
-  #ifdef DEBUG
-  writeDebugLog(F("Fxn: getStringDatetime()"));
-  #endif
-  return formatDate() + " " + formatTime();
-  //return String(year()) + "-" + month() + "-" + day() + " " + hour() + ":" + minute() + ":" + second();
-}
-*/
-
-/*
-void printTime()
-{
-  rtc.update();
-  Serial.print(String(rtc.hour()) + ": "); // Print hour
-  if (rtc.minute() < 10)
-    Serial.print('0'); // Print leading '0' for minute
-  Serial.print(String(rtc.minute()) + ": "); // Print minute
-  if (rtc.second() < 10)
-    Serial.print('0'); // Print leading '0' for second
-  Serial.print(String(rtc.second())); // Print second
-
-  if (rtc.is12Hour()) // If we're in 12-hour mode
-  {
-    // Use rtc.pm() to read the AM/PM state of the hour
-    if (rtc.pm()) Serial.print(" PM"); // Returns true if PM
-    else Serial.print(" AM");
-  }
-  Serial.print(" | ");
-  Serial.print(rtc.dayStr()); // Print day string
-  Serial.print(" - ");
-#ifdef PRINT_USA_DATE
-  Serial.print(String(rtc.month()) + " / " +   // Print month
-               String(rtc.date()) + " / ");  // Print date
-#else
-  Serial.print(String(rtc.date()) + " / " +    // (or) print date
-               String(rtc.month()) + " / "); // Print month
-#endif
-  Serial.println(String(rtc.year()));        // Print year
-
-  //Serial.println("end of code -----------------------------------------------");
-}
-*/
-
-/*
-void setRTCTime(unsigned long epoch) {
-  Serial.println(epoch);
-  setTime(epoch);
-  String temp = String(year());
-  int yr = temp.substring(2,4).toInt();
-  rtc.setTime(second(), minute(), hour(), weekday(), day(), month(), yr);
-  Serial.println(formatDate());
-  Serial.println(formatTime());
-}
-*/
-
+//----------------------------------------------------------------------
 // sensor logging functions
 
 void humidityLog() {
-  //float AirTemp = getRHTemp();
-  //float RH = getRHHum();
   if (!retrieveTemperatureData()) {
     Serial.println(F("Failed to retrieve temperature/humidity data."));
     return;
   }
   float AirTemp = getTemperature();
   float RH = getRelHumidity();
-  Serial.print("Humidity: ");
+  Serial.print(F("Humidity: "));
   Serial.print(RH);
-  Serial.println("%");
-  Serial.print("Temperature: ");
+  Serial.println(F("%"));
+  Serial.print(F("Temperature: "));
   //Serial.print(AirTemp * 1.8 + 32);
   Serial.print(AirTemp);
-  Serial.println(" °F");
+  Serial.println(F(" °F"));
   String RHstr(RH);
   String AirTempstr(AirTemp);
   saveReading("", RHstr, AirTempstr, "", "", "", "", "", "");
@@ -408,23 +268,22 @@ void lightLog() {
     Serial.println(F("Failed to retrieve light data."));
     return;
   }
-  Serial.print("Light: ");
+  Serial.print(F("Light: "));
   Serial.print(light);
-  Serial.println(" lux");
+  Serial.println(F(" lux"));
   String lightstr(light);
   saveReading(lightstr, "", "", "", "", "", "", "", "");
 }
 
 void tempLog() {
-  //double T = getGlobeTemp();
   float T = getGlobeTemperature();
   if (isnan(T)) {
     Serial.println(F("Failed to retrieve globe temperature."));
     return;
   }
-  Serial.print("TempG: ");
+  Serial.print(F("TempG: "));
   Serial.print(T);
-  Serial.println(" °F");
+  Serial.println(F(" °F"));
   String GTempstr(T);
   saveReading("", "", "", GTempstr, "", "", "", "", "");
 }
@@ -435,34 +294,33 @@ void soundLog() {
     Serial.println(F("Failed to retrieve sound level."));
     return;
   }
-  Serial.print("Sound: ");
+  Serial.print(F("Sound: "));
   Serial.print(sound_amp);
-  Serial.println(" [arb]");
+  Serial.println(F(" [arb]"));
   String Soundstr(sound_amp);
   saveReading("", "", "", "", Soundstr, "", "", "", "");
 }
 
 void co2Log() {
   int co2 = getCO2();
-  Serial.print("CO2: ");
+  Serial.print(F("CO2: "));
   Serial.print(co2);
-  Serial.println(" ppm");
+  Serial.println(F(" ppm"));
   String CO2str(co2);
   saveReading("", "", "", "", "", CO2str, "", "", "");
 }
 
 void coLog() {
   float CoSpecRaw = getCO();
-  Serial.print("CO: ");
+  Serial.print(F("CO: "));
   Serial.print(CoSpecRaw);
-  Serial.println(" [arb]");
+  Serial.println(F(" [arb]"));
   String CoSpecRawstr(CoSpecRaw);
   saveReading("", "", "", "", "", "", "", "", CoSpecRawstr);
 }
 
 
 void particleWarmup() {
-  digitalWrite(PM_ENABLE, HIGH);
   powerOnPMSensor();
   delay(10);
   startPMSensor();
@@ -479,12 +337,12 @@ void particleLog() {
     double c2_5 = getPM2_5();
     double c10 = getPM10();
     
-    Serial.print("PM_2.5: ");
+    Serial.print(F("PM_2.5: "));
     Serial.print(c2_5);
-    Serial.println(" ug/m^3");
-    Serial.print("PM_10:  ");
+    Serial.println(F(" ug/m^3"));
+    Serial.print(F("PM_10:  "));
     Serial.print(c10);
-    Serial.println(" ug/m^3");
+    Serial.println(F(" ug/m^3"));
     String PM2_5str(c2_5);
     String PM10str(c10);
     saveReading("", "", "", "", "", "", PM2_5str, PM10str, "");
@@ -492,9 +350,7 @@ void particleLog() {
     Serial.println(F("Failed to retrieve particle meter data."));
   }
 
-  //if((getRatePM() > 120) a&& !getModeCoord()) {
   if(getRatePM() > 120) {
-    //digitalWrite(PM_ENABLE, LOW);
     powerOffPMSensor();
   }
 }
@@ -507,37 +363,18 @@ void sdDateTime(uint16_t* date, uint16_t* time) {
   breakTime(t,tm);
   *date = FAT_DATE(1970+tm.Year,tm.Month,tm.Day);
   *time = FAT_TIME(tm.Hour,tm.Minute,tm.Second);
-
-  /*
-  sprintf(timestamp, "%02d:%02d:%02d %2d/%2d/%2d \n", hour(),minute(),second(),month(),day(),year()-2000);
-  //Serial.println(F("yy"));
-  //Serial.println(timestamp);
-  // return date using FAT_DATE macro to format fields
-  *date = FAT_DATE(year(), month(), day());
-  
-  // return time using FAT_TIME macro to format fields
-  *time = FAT_TIME(hour(), minute(), second());
-  */
 }
 
 
 //------------------------------------------------------------------------------
 
 #ifdef DEBUG
-
-int freeRam () 
-{
-  extern int __heap_start, *__brkval; 
-  int v; 
-  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
-}
-
 void writeDebugLog(String message) {
   char logname[] = "DEBUG.CSV";
   SdFile::dateTimeCallback(sdDateTime);
   // Save to SD
   if (! SD.exists(logname)) {
-    Serial.println(F("No debug log file detected. Creating..."));
+    Serial.println(F("No debug log file detected. Creating...."));
     // only open a new file if it doesn't exist
     logFile = SD.open(logname, FILE_WRITE);
     delay(1000);
@@ -559,12 +396,8 @@ void writeDebugLog(String message) {
   time_t utc = getUTC();
   String logData = "";
   String TS(utc);
-  //String D = formatDate();
-  //String D = getDBDateString(utc);
-  //String T = formatTime();
-  //String T = getDBTimeString(utc);
   String DT = getDBDateTimeString(utc);
-  logData = (TS + ", " + DT + ", " + message + ", " + freeRam());
+  logData = (TS + ", " + DT + ", " + message + ", " + freeRAM());
   logFile.println(logData);
   logFile.close();
   Serial.println(F("Debug log file updated."));

@@ -103,35 +103,35 @@ void poddPinChecks() {
   // Here, check hard-coded pin via constant or explicit
   // value (if constant not accessible), followed by
   // intended pin using teensy preprocessor constant.
-  pinCheck(/*WIZ812MJ_ES_PIN*/ 20,"Ethernet chip select");
-  pinCheck(PIN_B0,"B0");
-  pinCheck(ETHERNET_EN,"Ethernet enable");
-  pinCheck(PIN_F5,"F5");
+  pinCheck(/*WIZ812MJ_ES_PIN*/ 20,F("Ethernet chip select"));
+  pinCheck(PIN_B0,                F("B0"));
+  pinCheck(ETHERNET_EN,           F("Ethernet enable"));
+  pinCheck(PIN_F5,                F("F5"));
   
-  pinCheck(DS13074_CS_PIN,"RTC chip select");
-  pinCheck(PIN_C7,"C7");
+  pinCheck(/*RTC_PIN_CS*/ 17,F("RTC chip select"));
+  pinCheck(PIN_C7,           F("C7"));
   
-  pinCheck(SD_CHIP_SELECT,"SD chip select");
-  pinCheck(PIN_C0,"C0");
+  pinCheck(/*SD_CHIP_SELECT*/ 10,F("SD chip select"));
+  pinCheck(PIN_C0,               F("C0"));
   
-  pinCheck(/*PM_EN*/ 42,"PM enable");
-  pinCheck(PIN_F4,"F4");
-  pinCheck(16,"PM 2.5");
-  pinCheck(PIN_C6,"C6");
-  pinCheck(15,"PM 10");
-  pinCheck(PIN_C5,"C5");
+  pinCheck(/*PM_ENABLE*/ 42,F("PM enable"));
+  pinCheck(PIN_F4,          F("F4"));
+  pinCheck(16,              F("PM 2.5"));
+  pinCheck(PIN_C6,          F("C6"));
+  pinCheck(15,              F("PM 10"));
+  pinCheck(PIN_C5,          F("C5"));
   
   // Note A0 is an analog pin but PIN_A0 is not: the latter
   // refers to pins on the A register, not "analog".
-  pinCheck(MIC_PIN,"Microphone");
-  pinCheck(A0,"A0");
-  //pinCheck(PIN_A0,"PIN_A0");
+  pinCheck(/*MIC_PIN*/ A0,F("Microphone"));
+  pinCheck(A0,            F("A0"));
+  //pinCheck(PIN_A0,        F("PIN_A0"));
   
-  pinCheck(A1,"Globe temp");
-  pinCheck(A1,"A1");
+  pinCheck(A1,F("Globe temp"));
+  pinCheck(A1,F("A1"));
   
-  pinCheck(A2,"Light");
-  pinCheck(A2,"A2");
+  pinCheck(A2,F("Light"));
+  pinCheck(A2,F("A2"));
 }
 
 
