@@ -2,6 +2,7 @@
 /*
  * pod_config.cpp  
  * 2017 - Nick Turner and Morgan Redfield
+ * 2018 - Chris Savage
  * 
  * Handle the Configuration of a SensorPod.
  * Configurations are stored to EEPROM on the Teensy.

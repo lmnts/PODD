@@ -2,6 +2,7 @@
 /*
  * pod_sensors.h
  * 2017 - Nick Turner and Morgan Redfield
+ * 2018 - Chris Savage
  * Licensed under the AGPLv3. For full license see LICENSE.md 
  * Copyright (c) 2017 LMN Architects, LLC
  */
@@ -31,15 +32,6 @@ void stopADCFreeRunning();
 bool isADCFreeRunning();
 int readAnalog(uint8_t pin);
 int readAnalogFast();
-
-// get readings
-//float getRHTemp();
-//float getRHHum();
-//float getLight();
-//double getGlobeTemp();
-//double getSound();
-//int getCO2();
-//float getCO();
 
 // Ambient light sensor
 void initLightSensor();

@@ -75,7 +75,6 @@ byte ethMACAddress[MAC_ADDRESS_LEN];
 const char SERVER_PAGE_NAME[] = "/LMNSensePod.php"; // Name of submission page. Log into EC2 Server and navigate to /var/www/html to view
 #define SERVER_PORT 80
 #define LOCAL_PORT 8888
-EthernetUDP Udp;
 
 // Maximum amount of time to allow ethernet to obtain connection.
 #define ETHERNET_START_TIMEOUT 5000
@@ -95,7 +94,6 @@ unsigned long packetsUploaded = 0;
 #define NTP_SERVER "time.nist.gov"
 #define NTP_PORT 123
 #define NTP_PACKET_SIZE 48
-
 
 
 
@@ -859,28 +857,39 @@ String getMACAddressString() {
 
 
 void ethernetSetup() {
-  // Ethernet connection
-
+  // Provide power to the ethernet board
   pinMode(ETHERNET_EN, OUTPUT);
   digitalWrite(ETHERNET_EN, HIGH);
   delay(10);
 
+  // Ethernet chip reset pin
+  // WIZnet W5100 documentation says this needs to be pulled low for
+  // as short as 2us to reinitialize all internal registers to their
+  // default states.  However, it takes 10ms to reset to internal
+  // PLOCK (whatever that is...).
   pinMode(WIZ812MJ_RESET_PIN, OUTPUT);
   digitalWrite(WIZ812MJ_RESET_PIN, LOW);
-  delay(2);
+  delay(1);
   digitalWrite(WIZ812MJ_RESET_PIN, HIGH);
-  delay(2);
-
+  delay(10);
+  
+  // SPI bus chip select pin
   pinMode(WIZ812MJ_ES_PIN, OUTPUT);
   Ethernet.init(WIZ812MJ_ES_PIN);
-
+  
+  // WIZnet 5100 has no hardware MAC address: we must provide one.
+  // We use the XBee serial number to construct a (hopefully unique)
+  // MAC address.
   initMACAddress();
   Serial.print(F("Ethernet MAC Address: "));
   Serial.println(getMACAddressString());
-
+  
+  // Connect to the network.
+  // For whatever reason, this seems to fail 20-30% of the time,
+  // at least when testing on LMN network.
   ethernetBegin();
 
-  // Sometimes a second attempt will solve DHCP issues
+  // Sometimes a second attempt will solve DHCP issues.
   if (!ethStatus.connected()) {
     Serial.print(F("Re-attempting to connect to the network...."));
     delay(1000);
@@ -926,10 +935,14 @@ bool ethernetBegin() {
   //delay(10);
 
   // Reset ethernet chip
+  // WIZnet W5100 documentation says this needs to be pulled low for
+  // as short as 2us to reinitialize all internal registers to their
+  // default states.  However, it takes 10ms to reset to internal
+  // PLOCK (whatever that is...).
   digitalWrite(WIZ812MJ_RESET_PIN, LOW);
-  delay(2);
+  delay(1);
   digitalWrite(WIZ812MJ_RESET_PIN, HIGH);
-  delay(2);
+  delay(10);
 
   //Ethernet.init(WIZ812MJ_ES_PIN);
 
@@ -937,6 +950,11 @@ bool ethernetBegin() {
   //Serial.print(F("Ethernet link status: "));
   //Serial.println(Ethernet.linkStatus());
 
+  // For whatever reason, this seems to fail 20-30% of the time,
+  // at least when testing on LMN network.  Firmware should be
+  // capable of calling this routine again if begin() fails, perhaps
+  // after some interval of time to avoid getting stuck in a
+  // reinitialization loop (if the network is actually inaccessible).
   if (!Ethernet.begin(ethMACAddress,ETHERNET_START_TIMEOUT)) {
     ethStatus.restarted(false);
     Serial.println(F("Ethernet initialization failed.  Readings will not be pushed to remote"));
@@ -946,10 +964,8 @@ bool ethernetBegin() {
     ethStatus.restarted(true);
     Serial.print(F("Ethernet initialized. IP: "));
     Serial.println(Ethernet.localIP());
-    Udp.begin(LOCAL_PORT);
     return true;
   }
-  
 }
 
 
@@ -1145,6 +1161,8 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
     //Serial.println(client.connected());
     //Serial.print(F("Available for write: "));
     //Serial.println(client.availableForWrite());
+    //Serial.print(F("Network socket: "));
+    //Serial.println(client.getSocketNumber());
     //Serial.print(F(""));
     
     //Serial.println(F("connected"));
@@ -1185,6 +1203,27 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
   } else {
     // Flag bad ethernet connection
     ethStatus.failed();
+    
+    // Ensure connection is closed.
+    // It appears that the connect routine may occasionally fails
+    // due to the network socket being (prematurely) closed.
+    // However, in some cases, that socket becomes(?) open and/or
+    // it's status is not cleared, leaving it in a state where
+    // it is no longer usable.  With only four sockets on the
+    // WIZnet W5100, those sockets can quickly become exhausted,
+    // in which case the network can no longer be used until the
+    // ethernet is reset.  The delay and stop() here seems to
+    // catch these socket leak cases (unclear if the delay is
+    // necessary; the assumption is that the external ethernet
+    // board may still be processing a socket opening event).
+    delay(5);
+    if (client.getSocketNumber() != MAX_SOCK_NUM) {
+      Serial.print(F("Warning: Ethernet socket was not released ("));
+      Serial.print(client.getSocketNumber());
+      Serial.println(F(")."));
+    }
+    // Does nothing if the socket has been closed?
+    client.stop();
     
     // Indicate error.  Note most network errors are '0' (uninformative).
     switch (stat) {
@@ -1240,7 +1279,17 @@ void updateClockFromNTP() {
   packet[13] = 0x4E;
   packet[14] = 49;
   packet[15] = 52;
-
+  
+  // Open port to receive UDP response packet.
+  EthernetUDP Udp;
+  if (!Udp.begin(LOCAL_PORT)) {
+    // Flag bad ethernet connection
+    ethStatus.failed();
+    Serial.println(F("Warning: Failed to open port to receive NTP response."));
+    Udp.stop();
+    return;
+  }
+  
   // If we do not have IP address, we will be unable to connect to
   // NTP server.  The ethernetMaintain() routine should eventually
   // try to reconnect.
@@ -1248,14 +1297,16 @@ void updateClockFromNTP() {
     // Flag bad ethernet connection
     ethStatus.failed();
     Serial.println(F("Warning: Failed to connect to NTP server (no internet connection)."));
+    Udp.stop();
     return;
   }
   
   // Send request packet to NTP server.  Do nothing if cannot connect.
   if (!Udp.beginPacket(NTP_SERVER,NTP_PORT)) {
-    Serial.println(F("Warning: Failed to connect to NTP server."));
     // Flag bad ethernet connection
     ethStatus.failed();
+    Serial.println(F("Warning: Failed to connect to NTP server."));
+    Udp.stop();
     return;
   }
   Udp.write(packet,NTP_PACKET_SIZE);
@@ -1273,6 +1324,7 @@ void updateClockFromNTP() {
   } while ((millis() - t0 < 1000) && (Udp.parsePacket() == 0));
   if (Udp.available() != NTP_PACKET_SIZE) {
     Serial.println(F("Warning: Failed to retrieve NTP data."));
+    Udp.stop();
     return;
   }
   
@@ -1280,9 +1332,11 @@ void updateClockFromNTP() {
   // clear bad ethernet connection flags
   ethStatus.succeeded();
   
-  // Get returned packet contents and extract timestamp
-  // from bytes 40-43.
+  // Get returned packet contents and release incoming port.
   Udp.read(packet,NTP_PACKET_SIZE);
+  Udp.stop();
+  
+  // Extract timestamp from packet bytes 40-43.
   unsigned long tntp = (((unsigned long)packet[40]) << 24)
                      | (((unsigned long)packet[41]) << 16)
                      | (((unsigned long)packet[42]) <<  8)
