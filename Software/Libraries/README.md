@@ -5,8 +5,6 @@ Libraries found here are mainly pulled from various [GitHub](https://github.com)
 
 ### Sources
 Those marked with (†) are not in the Arduino library repository and must be installed manually.
-- **AsyncDelay:**
-  <https://github.com/stevemarple/AsyncDelay>
 - **ClosedCube OPT3001:**
   <https://github.com/closedcube/ClosedCube_OPT3001_Arduino>
 - **NeoSWSerial:**
@@ -21,4 +19,6 @@ Those marked with (†) are not in the Arduino library repository and must be in
   <https://github.com/PaulStoffregen/TimerOne>
 - **TimerThree:**
   <https://github.com/PaulStoffregen/TimerThree>
+- **Timezone:**
+  <https://github.com/JChristensen/Timezone>
 
