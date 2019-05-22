@@ -101,8 +101,10 @@ unsigned long packetsUploaded = 0;
 
 // Minimum amount of time between network reconnect attempts [ms].
 // Prevents frequent restarts if the network is unavailable.
+// Note network reinitialization prevents device from performing
+// other tasks until it succeeds or times out.
 //#define NETWORK_RECONNECT_INTERVAL (5*60000UL)
-#define NETWORK_RECONNECT_INTERVAL (30000UL)
+#define NETWORK_RECONNECT_INTERVAL (60000UL)
 // Number of consecutive unsuccessful network interactions before
 // attempting a network reconnect.  Occasional fails may be due
 // to network instability or congestion instead of an unconnected
@@ -888,10 +890,10 @@ void ethernetSetup() {
   // For whatever reason, this seems to fail 20-30% of the time,
   // at least when testing on LMN network.
   ethernetBegin();
-
+  
   // Sometimes a second attempt will solve DHCP issues.
   if (!ethStatus.connected()) {
-    Serial.print(F("Re-attempting to connect to the network...."));
+    Serial.println(F("Re-attempting to connect to the network...."));
     delay(1000);
     int stat = Ethernet.maintain();
     switch (stat) {
@@ -905,12 +907,14 @@ void ethernetSetup() {
         break;
       case 2:
         Serial.println(F("Ethernet: DHCP renewal succeeded."));
+        ethStatus.restarted(true);
         break;
       case 3:
         Serial.println(F("Ethernet: DHCP rebind failed."));
         break;
       case 4:
         Serial.println(F("Ethernet: DHCP rebind succeeded."));
+        ethStatus.restarted(true);
         break;
       default:
         Serial.print(F("Ethernet: Unknown DHCP error ("));
