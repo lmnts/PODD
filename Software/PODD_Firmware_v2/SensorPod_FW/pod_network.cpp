@@ -26,7 +26,7 @@
 // If there is sufficient dynamic memory remaining for firmware
 // operation, might want to increase XBee buffer size to reduce
 // packet loss due to buffer overruns.
-#define XBEE_BUFFER_SIZE 256
+#define XBEE_BUFFER_SIZE 512
 volatile char xbeeBuffer[XBEE_BUFFER_SIZE];
 volatile size_t xbeeBufferHead = 0;
 volatile size_t xbeeBufferElements = 0;

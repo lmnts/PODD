@@ -61,6 +61,11 @@ bool sensorsInitialized = false;
 volatile bool adcFreeRunning = false;
 
 // Light [OPT3001]
+// OPT3001 I2C address:
+//   0x44  ADDR pin to GND
+//   0x45  ADDR pin to VDD
+//   0x46  ADDR pin to SDA
+//   0x47  ADDR pin to SDL
 #define OPT3001_ADDR 0x45
 ClosedCube_OPT3001 opt3001;
 
@@ -619,9 +624,26 @@ int readAnalogFast() {
 void initLightSensor() {
   opt3001.begin(OPT3001_ADDR);
   OPT3001_Config opt3001Config;
+  // Use 0000b to 1011b to explicitly set range,
+  // or use 1100b for automatic scaling of range.
   opt3001Config.RangeNumber = B1100;
+  // Conversion time: 0 for 100ms, 1 for 800ms
   opt3001Config.ConvertionTime = B1;  // [sic]
+  // Use 00b to shutdown the sensor, 01b for a single-shot read (returns
+  // to 00b after the read completes), or 11b for continuous sensor reading.
   opt3001Config.ModeOfConversionOperation = B11;
+  
+  // The other configuration fields are irrelevant for our purposes and
+  // not set here.  See documentation for other possibilities (notably if
+  // intending to use the interrupt pin).
+  
+  // Note automatic scaling goes up or down by 1-2 scales (x2 or x0.5) with
+  // each measurement cycle until it reaches a reasonable range.  With the
+  // longer integration time, it may take several seconds (up to ~ 10s) for
+  // the readings to stabilize; during that time, the readings may be too
+  // low and/or lack precision.
+  
+  // Upload configuration to sensor
   OPT3001_ErrorCode opt3001Err = opt3001.writeConfig(opt3001Config);
   (void)opt3001Err;  // suppress unused variable warning
   //if (opt3001Err == NO_ERROR) {
