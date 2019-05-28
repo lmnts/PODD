@@ -1601,7 +1601,7 @@ void processClockPacket(const String packet) {
   setUTC(utc);
 
   time_t utc0 = getUTC();
-  Serial.print(F("RTC updated.  New time:"));
+  Serial.println(F("RTC updated.  New time:"));
   Serial.print(F("  Universal time: "));
   Serial.println(getUTCDateTimeString(utc0));
   Serial.print(F("  Local time:     "));
