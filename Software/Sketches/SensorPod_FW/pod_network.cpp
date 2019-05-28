@@ -64,6 +64,14 @@ volatile bool xbeeBufferHold = false;
 // read ISR run time must be shorter than that so it does not interfere
 // with the Serial1 ISR timing.
 
+// The XBee's serial number.  To be extracted from XBee.
+uint64_t xbeeSerialNumber = 0;
+// If not a coordinator, the destination is the serial number of the
+// coordinator.  Initially extracted from XBee, but will be updated from
+// network broadcast by coordinator.  Cached here instead of rereading
+// from XBee due to ~ 2 second command mode period for each read.
+uint64_t xbeeDestination = 0;
+
 String set1;
 String set2;
 
@@ -180,67 +188,77 @@ struct NetworkStatus {
 NetworkStatus ethStatus;
 
 
-//--------------------------------------------------------------------------------------------- [XBee Management]
+//------------------------------------------------------------------------------
 
-/* Initialize the XBee serial interface and buffering mechanism.
-   Must call startXBee() to start listening to XBee. */
-void initXBee() {
-  // Start serial interface between XBee and microcontroller.
-  // Note there are multiple levels of buffers: the XBee
-  // contains send/receive buffers and the Arduino core libraries
-  // implement 64-byte microcontroller buffers for sending/
-  // receiving data to/from the XBee.  On top of that, we have
-  // our own buffer for received data to overcome limitations in
-  // the Arduino receive buffer....
-  xbee.begin(9600);
+/* Places the XBee in command mode.  Takes ~ 2 seconds.  XBee will remain 
+   in command mode for ~ 1 second or until explicitly ended. */
+bool startXBeeCommandMode() {
+  // Clear incoming buffer
+  while (xbee.available()) xbee.read();
+  // Put XBee in command mode
+  delay(1100);
+  xbee.print(F("+++"));
+  delay(1100);
+  // Get response: should receive "OK\r" if successful
+  const int BUF_LEN = 4;
+  char buf[BUF_LEN];
+  size_t pos = 0;
+  while (xbee.available()) {
+    buf[pos++] = xbee.read();
+    if (buf[pos-1] == '\r') break;
+    if (pos >= BUF_LEN - 1) break;
+  }
+  buf[pos] = '\0';
+  // Clear any remaining buffer
+  while (xbee.available()) xbee.read();
+  String s(buf);
+  // Check response
+  return s.equals(F("OK\r"));
+}
 
-  // Initialize ring buffer for data that came across the XBee
-  // network.
-  xbeeBufferHold = true;
-  resetXBeeBuffer();
+
+/* Ends the XBee command mode.  Argument indicates if any modified
+   settings should be saved; otherwise, changes will only be applied
+   until the XBee is reset. */
+void stopXBeeCommandMode(const bool write) {
+  // Save new configuration
+  if (write) submitXBeeCommand(F("ATWR"));
+  // Exit command mode (applies changes)
+  submitXBeeCommand(F("ATCN"));
 }
 
 
 /* Sends the given command to the XBee, indicating if the command
-   was successfully sent.  XBee must already be in coordinator mode.
-   Do not include trailing '\r'. */
+   was successfully sent (but not necessarily successfully processed...).
+   XBee must already be in command mode.  Do not include trailing '\r'. */
 bool submitXBeeCommand(const String cmd) {
+  // XBee responds with "OK\r" or "ERROR\n" after each sent command,
+  // except when data is returned.
   // Clear incoming buffer
   while (xbee.available()) xbee.read();
   // Submit command
   xbee.print(cmd + "\r");
-  // Wait for response, which should be "OK\r" or "ERROR\r"
+  // Wait for response, which should end in "\r"
   unsigned long t0 = millis();
-  while (millis() - t0 < 1000) {
-    if (xbee.available() >= 3) break;
+  while (millis() - t0 < 100) {
+    while (xbee.available()) {
+      if (xbee.read() == '\r') return true;
+    }
     delay(10);
   }
-  if (!xbee.available()) return false;
-  // In case last few characters have not yet arrived...
-  delay(5);
-  char buff[7];
-  size_t len = 0;
   while (xbee.available()) {
-    buff[len++] = xbee.read();
-    if (len > 5) break;
+    if (xbee.read() == '\r') return true;
   }
-  buff[len] = '\0';
-  // Clear remaining incoming buffer
-  while (xbee.available()) xbee.read();
-  // Check response
-  String response(buff);
-  if (response.equals(F("OK\r"))) return true;
-  if (response.equals(F("ERROR\r"))) return false;
-  // Missing/invalid/unknown response
   return false;
 }
 
 
 /* Sends the given command to the XBee and returns the response.
    Returns empty string if communication was unsuccessful.
-   XBee must already be in coordinator mode.
-   Do not include trailing '\r'. */
+   XBee must already be in command mode.  Do not include trailing '\r'. */
 String getXBeeCommandResponse(const String cmd) {
+  // XBee responds with "OK\r" or "ERROR\n" after each sent command,
+  // except when data is returned.
   // Clear incoming buffer
   while (xbee.available()) xbee.read();
   // Submit command
@@ -250,7 +268,7 @@ String getXBeeCommandResponse(const String cmd) {
   char buf[BUF_LEN];
   // Wait for response until '\r'
   unsigned long t0 = millis();
-  while (millis() - t0 < 1000) {
+  while (millis() - t0 < 100) {
     if (xbee.available()) {
       char c = xbee.read();
       if (c == '\r') break;
@@ -273,7 +291,7 @@ String getXBeeCommandResponse(const String cmd) {
 
 /* Sends the given command to the XBee and returns the numeric response.
    Returns 0 if communication was unsuccessful or response was not
-   hexadecimal.  XBee must already be in coordinator mode.
+   hexadecimal.  XBee must already be in command mode.
    Do not include trailing '\r'. */
 uint32_t getXBeeNumericResponse(const String cmd) {
   String response = getXBeeCommandResponse(cmd);
@@ -294,60 +312,150 @@ uint32_t getXBeeNumericResponse(const String cmd) {
 }
 
 
-/* Gets the XBee serial number.  64-bit number is divided into
-   high and low 32-bit parts.  Returns 0 is could not obtain
-   the serial number. */
-void getXBeeSerialNumber(uint32_t &SH, uint32_t &SL) {
-  // Put XBee in command mode
-  delay(1100);
-  xbee.print(F("+++"));
-  delay(1100);
-  while (xbee.available()) xbee.read();
-
-  // Get serial numbers
-  SH = getXBeeNumericResponse("ATSH");  // For XBee S3B, this is 0x0013A2XX
-  SL = getXBeeNumericResponse("ATSL");
-
-  // Exit command mode
-  submitXBeeCommand(F("ATCN"));
+/* Gets the XBee serial number as 64-bit number.  Returns 0 if 
+   could not obtain the serial number.  XBee must already be in
+   command mode. */
+uint64_t getXBeeSerialNumber() {
+  // Get serial number as upper and lower 32-bits
+  uint32_t SH = getXBeeNumericResponse(F("ATSH"));  // For XBee S3B, this is 0x0013A2XX
+  uint32_t SL = getXBeeNumericResponse(F("ATSL"));
+  // Construct 64-bit number
+  return ((uint64_t)SH << 32) | (uint64_t)SL;
 }
 
 
-/* Sets the XBee as coordinator (true) or drone (false).
-   The destination address is set to the broadcast or
-   coordinator address, respectively. */
-void setXBeeCoordinatorMode(const bool coord) {
-  // XBee responds with "OK\r" or "ERROR\n" after each sent
-  // command.
-  
-  // Put XBee in command mode
-  delay(1100);
-  xbee.print(F("+++"));
-  delay(1100);
-  while (xbee.available()) xbee.read();
+/* Gets the XBee destination as 64-bit number.  Returns 0 if 
+   could not obtain the destination.  XBee must already be in
+   command mode. */
+uint64_t getXBeeDestination() {
+  // Get destination as upper and lower 32-bits
+  uint32_t DH = getXBeeNumericResponse(F("ATDH"));
+  uint32_t DL = getXBeeNumericResponse(F("ATDL"));
+  // Construct 64-bit number
+  return ((uint64_t)DH << 32) | (uint64_t)DL;
+}
 
+
+/* Sets the XBee destination as 64-bit number.  XBee must already 
+   be in command mode. */
+void setXBeeDestination(const uint64_t dest) {
+  // Set destination as upper and lower 32-bits
+  uint32_t DH = (dest >> 32) & 0xFFFFFFFF;
+  uint32_t DL = (dest >>  0) & 0xFFFFFFFF;
+  submitXBeeCommand(F("ATDH ") + String(DH,HEX));
+  submitXBeeCommand(F("ATDL ") + String(DL,HEX));
+}
+
+
+/* Create a zero-padded hex string for the given 64-bit integer. */
+String uint64ToHexString(uint64_t v) {
+  uint32_t vh = (v >> 32) & 0xFFFFFFFF;
+  uint32_t vl = (v >>  0) & 0xFFFFFFFF;
+  char buff[20];
+  sprintf(buff,"0x%08lX%08lX",vh,vl);
+  return String(buff);
+  
+  //String s = "0x";
+  //char buf[3];
+  //const int VBYTES = 8;
+  //for (size_t k = 0; k < VBYTES; k++) {
+  //  sprintf(buf,"%02X",(uint8_t)((v >> (8*(VBYTES-k-1))) & 0xFF));
+  //  s = s + buf;
+  //}
+  //return s;
+}
+
+String getXBeeSerialNumberString() {return uint64ToHexString(xbeeSerialNumber);}
+String getXBeeDestinationString() {return uint64ToHexString(xbeeDestination);}
+
+
+
+//--------------------------------------------------------------------------------------------- [XBee Management]
+
+/* Initialize the XBee serial interface and buffering mechanism.
+   Must call startXBee() to start listening to XBee. */
+void initXBee() {
+  // Start serial interface between XBee and microcontroller.
+  // Note there are multiple levels of buffers: the XBee
+  // contains send/receive buffers and the Arduino core libraries
+  // implement 64-byte microcontroller buffers for sending/
+  // receiving data to/from the XBee.  On top of that, we have
+  // our own buffer for received data to overcome limitations in
+  // the Arduino receive buffer....
+  xbee.begin(9600);
+
+  // Initialize ring buffer for data that came across the XBee
+  // network.
+  xbeeBufferHold = true;
+  resetXBeeBuffer();
+
+  // Get XBee serial number and current destination.
+  startXBeeCommandMode();
+  xbeeSerialNumber = getXBeeSerialNumber();
+  xbeeDestination = getXBeeDestination();
+  stopXBeeCommandMode(false);
+  
+  //Serial.println(F("  XBee serial number: ") + getXBeeSerialNumberString());
+  //Serial.println(F("  XBee destination:   ") + getXBeeDestinationString());
+}
+
+
+/* Sets the XBee as coordinator (true) or drone (false),
+   sets the destination address, and performs any other
+   XBee configuration.  Argument indicates if this PODD
+   is the coordinator. */
+void configureXBee(const bool coord) {
+  // Takes ~ 2 seconds to enter command mode.
+  startXBeeCommandMode();
+  
   // Settings for coordinator
   if (coord) {
     // Set as coordinator
     submitXBeeCommand(F("ATCE 1"));
     // Set destination to broadcast address (0x000000000000FFFF).
     // Note command string omits '0x'.
-    submitXBeeCommand(F("DH 00000000"));
-    submitXBeeCommand(F("DL 0000FFFF"));
-
+    //submitXBeeCommand(F("ATDH 00000000"));
+    //submitXBeeCommand(F("ATDL 0000FFFF"));
+    xbeeDestination = 0xFFFF;
+    setXBeeDestination(xbeeDestination);
+    
   // Settings for drone
   } else {
     // Set as non-coordinator
     submitXBeeCommand(F("ATCE 0"));
     // Set destination to coordinator address (0x0000000000000000).
     // Note command string omits '0x'.
-    xbee.print(F("DH 00000000"));
-    xbee.print(F("DL 00000000"));
+    //submitXBeeCommand(F("ATDH 00000000"));
+    //submitXBeeCommand(F("ATDL 00000000"));
+    //xbeeDestination = 0x0000;
+    //setXBeeDestination(xbeeDestination);
+    // NOTE: Unlike conventional XBee network topologies, Digimesh
+    // does not have a coordinator node and the "coordinator" will
+    // not receive packets sent to the generic coordinator address.
+    // Instead, the destination should be set to the serial number
+    // of the designated "coordinator" PODD.  If the XBee destination
+    // was set to an explicit XBee serial number, use that for now,
+    // otherwise broadcast data until we get the coordinator address
+    // via a broadcast.
+    // XBee 900HP serial numbers are of form 0x0013A2XXXXXXXXXX.
+    if (((xbeeDestination >> 40) & 0xFFFFFF) == 0x0013A2) {
+      // do nothing (keep current destination)
+    } else {
+      xbeeDestination = 0xFFFF;
+      setXBeeDestination(xbeeDestination);
+    }
   }
   
+  // Read settings
+  //Serial.println(F("ATCE: ") + getXBeeCommandResponse(F("ATCE")));
+  //Serial.println(F("ATDH: ") + getXBeeCommandResponse(F("ATDH")));
+  //Serial.println(F("ATDL: ") + getXBeeCommandResponse(F("ATDL")));
+  
+  //Serial.println(F("  XBee serial number: ") + getXBeeSerialNumberString());
+  //Serial.println(F("  XBee destination:   ") + getXBeeDestinationString());
+  
   // Save new configuration and exit command mode (applies changes)
-  submitXBeeCommand(F("ATWR"));
-  submitXBeeCommand(F("ATCN"));
+  stopXBeeCommandMode(true);
 }
 
 
@@ -729,6 +837,9 @@ void processXBee() {
       case 'C':
         if (!getModeCoord()) processClockPacket(packet);
         break;
+      case 'D':
+        if (!getModeCoord()) processDestinationPacket(packet);
+        break;
       // Invalid packet: do nothing
       default:
         break;
@@ -821,14 +932,72 @@ void xbeeReading(String incoming) {
 }
 
 
+/* Broadcast the coordinator's address over the XBee network,
+   to be used as the destination address by other XBees.
+   Intended to be called regularly from coordinator. */
+void broadcastCoordinatorAddress() {
+  // Only broadcast from coordinator.
+  if (!getModeCoord()) return;
+  
+  Serial.println(F("Broadcasting coordinator address to all nodes...."));
+  uint32_t SH = (xbeeSerialNumber >> 32) & 0xFFFFFFFF;
+  uint32_t SL = (xbeeSerialNumber >>  0) & 0xFFFFFFFF;
+  
+  // Zero-padded hex string.
+  char buff[18];
+  sprintf(buff,"D%08lX%08lX",SH,SL);
+  sendXBee(buff);
+}
+
+
+/* Parses an XBee destination broadcast packet and updates destination 
+   if packet is valid and provides a new address. */
+void processDestinationPacket(const String packet) {
+  if ((packet.length() != 17) || (packet.charAt(0) != 'D')) {
+    Serial.println(F("Warning: Received invalid coordinator address broadcast (ignoring)."));
+    return;
+  }
+
+  uint64_t v = 0;
+  for (int k = 0; k < 16; k++) {
+    char c = packet.charAt(k+1);
+    if ((c >= '0') && (c <= '9')) {
+      v = (v << 4) + (uint8_t)(c - '0');
+    } else if ((c >= 'A') && (c <= 'F')) {
+      v = (v << 4) + (uint8_t)(c - 'A' + 10);
+    } else if ((c >= 'a') && (c <= 'f')) {
+      v = (v << 4) + (uint8_t)(c - 'a' + 10);
+    } else {
+      Serial.println(F("Warning: Received invalid coordinator address broadcast (ignoring)."));
+      return;
+    }
+  }
+  
+  // Update destination address only if it has changed
+  if (v != xbeeDestination) {
+    xbeeDestination = v;
+    startXBeeCommandMode();
+    setXBeeDestination(xbeeDestination);
+    stopXBeeCommandMode(true);
+    Serial.print(F("Coordinator (destination) address updated: "));
+    uint32_t SH = (xbeeSerialNumber >> 32) & 0xFFFFFFFF;
+    uint32_t SL = (xbeeSerialNumber >>  0) & 0xFFFFFFFF;
+    char buff[20];
+    sprintf(buff,"0x%08lX%08lX",SH,SL);
+    Serial.println(buff);
+  }
+}
+
+
 //--------------------------------------------------------------------------------------------- [Upload Support]
 
 /* Sets the ethernet MAC address using the XBee serial number. */
 void initMACAddress() {
   // Use XBee's serial number for ethernet MAC address
-  // (as it does not have its own)
-  uint32_t SH,SL;
-  getXBeeSerialNumber(SH,SL);
+  // (as it does not have its own). Serial number should
+  // be cached already.
+  uint32_t SH = (xbeeSerialNumber >> 32) & 0xFFFFFFFF;
+  uint32_t SL = (xbeeSerialNumber >>  0) & 0xFFFFFFFF;
   // If failed to get XBee serial number, provide a default.
   // For XBee S3B, SH would be 0x0013A2XX; we use the same here
   // to allow for network whitelisting by MAC range.

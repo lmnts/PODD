@@ -13,10 +13,23 @@
 
 //--------------------------------------------------------------------------------------------- [XBee Management]
 
+// XBee command mode routines:
+// used by higher-level XBee routines below
+bool startXBeeCommandMode();
+void stopXBeeCommandMode(const bool write=true);
+bool submitXBeeCommand(const String cmd);
+String getXBeeCommandResponse(const String cmd);
+uint32_t getXBeeNumericResponse(const String cmd);
+uint64_t getXBeeSerialNumber();
+uint64_t getXBeeDestination();
+void setXBeeDestination(const uint64_t dest);
+
+String getXBeeSerialNumberString();
+String getXBeeDestinationString();
+
+// XBee routines
 void initXBee();
-//bool submitXBeeCommand(const String cmd);
-//String getXBeeCommandResponse(const String cmd);
-void setXBeeCoordinatorMode(const bool coord);
+void configureXBee(const bool coord);
 void startXBee();
 void readXBeeISR();
 void readXBee();
@@ -33,6 +46,9 @@ bool submitXBeeCommand(const String cmd);
 void xbeeRate(String incoming);
 void xbeeSettings(String incoming, String incoming2);
 void xbeeReading(String incoming);
+
+void broadcastCoordinatorAddress();
+void processDestinationPacket(const String packet);
 
 
 //--------------------------------------------------------------------------------------------- [Upload Support]

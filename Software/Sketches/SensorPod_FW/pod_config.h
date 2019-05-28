@@ -29,7 +29,7 @@
 #define coT_default 60
 #define DeviceID "proto003"
 #define project_default "Demonstration"
-#define server_default "ec2-35-160-73-213.us-west-2.compute.amazonaws.com"
+#define server_default "ec2-54-212-239-216.us-west-2.compute.amazonaws.com"
 #define setup_default "1900-01-01"
 #define teardown_default "1970-01-01"
 #define upload_default 3600

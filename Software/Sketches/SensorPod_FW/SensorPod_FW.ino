@@ -109,7 +109,8 @@ void setup() {
   Serial.println(F("Setting up SD...."));
   setupPodSD();
   
-  // Ethernet uses ~ 150 mA when powered
+  // Ethernet uses ~ 150 mA when powered.
+  // Should initialize XBee first (uses XBee SN for MAC address).
   Serial.println(F("Setting up ethernet...."));
   ethernetSetup();
   
@@ -129,7 +130,13 @@ void setup() {
   interactivePrompt();
   
   Serial.println(F("Configuring XBee...."));
-  setXBeeCoordinatorMode(getModeCoord());
+  configureXBee(getModeCoord());
+  Serial.print(F("  Coordinator:   "));
+  Serial.println(getModeCoord() ? "yes" : "no");
+  Serial.print(F("  Serial number: "));
+  Serial.println(getXBeeSerialNumberString());
+  Serial.print(F("  Destination:   "));
+  Serial.println(getXBeeDestinationString());
   
   // Begin background process to pull data from the XBee for later
   // processing.  Used by coordinator to buffer packets arriving from
@@ -155,8 +162,8 @@ void setup() {
   setupSensorTimers();
 
   if (getModeCoord()) {
-    Serial.println(F("Starting clock timers...."));
-    setupClockTimers();
+    Serial.println(F("Starting network timers...."));
+    setupNetworkTimers();
   }
   
   // power optimizations

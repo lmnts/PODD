@@ -23,7 +23,7 @@ void logDataSD(String sensorData);
 void writeSDConfig(String DID, String Location, String Coordinator, String Project, String Rate, String Setup, String Teardown, String Datetime, String NetID);
 void sdDateTime(uint16_t* date, uint16_t* time);
 void setupSensorTimers();
-void setupClockTimers();
+void setupNetworkTimers();
 void handleLoopLogging();
 
 // log readings

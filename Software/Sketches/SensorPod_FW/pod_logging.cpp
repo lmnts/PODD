@@ -33,6 +33,16 @@
 #define NTP_POLL_INTERVAL 3600
 #define CLOCK_BROADCAST_INTERVAL 60
 
+// Frequency at which to broadcast the coordinator's address.
+// Needed by drones to permit unicast addressing, which reduces
+// network congestion (relative to broadcasting all packets).
+// Once the address is received by a drone, it will be
+// remembered permanently until a different address is received
+// through a broadcast.  That means this rate can be fairly
+// low, with the only drawback that drones may take some time
+// to update their destination if the coordinator node changes.
+#define ADDRESS_BROADCAST_INTERVAL 60
+
 #define logint 01 // whenever seconds hit 01 (RTC)
 //SET START MONTH, DAY, HOUR, AND MINUTE.
 int startMonth = 0, startDay = 0, startHr = 0, startMinute = 0;
@@ -231,12 +241,14 @@ void setupSensorTimers() {
     }
 }
 
-/* Set up timers for clock-related tasks, like updating from NTP
-   and broadcasting time across XBee network. */
-void setupClockTimers() {
+/* Set up timers for network-related tasks, like updating the
+   time from NTP, broadcasting the time across XBee network,
+   and broadcasting the coordinator's address. */
+void setupNetworkTimers() {
   if (getModeCoord()) {
     Alarm.timerRepeat(NTP_POLL_INTERVAL,updateClockFromNTP);
     Alarm.timerRepeat(CLOCK_BROADCAST_INTERVAL,broadcastClock);
+    Alarm.timerRepeat(ADDRESS_BROADCAST_INTERVAL,broadcastCoordinatorAddress);
   }
 }
 
