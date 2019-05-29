@@ -213,6 +213,8 @@ bool startXBeeCommandMode() {
   while (xbee.available()) xbee.read();
   String s(buf);
   // Check response
+  //Serial.print(F("XBee response: "));
+  //Serial.println(s);
   return s.equals(F("OK\r"));
 }
 
@@ -980,10 +982,10 @@ void processDestinationPacket(const String packet) {
     setXBeeDestination(xbeeDestination);
     stopXBeeCommandMode(true);
     Serial.print(F("Coordinator (destination) address updated: "));
-    uint32_t SH = (xbeeSerialNumber >> 32) & 0xFFFFFFFF;
-    uint32_t SL = (xbeeSerialNumber >>  0) & 0xFFFFFFFF;
+    uint32_t DH = (xbeeDestination >> 32) & 0xFFFFFFFF;
+    uint32_t DL = (xbeeDestination >>  0) & 0xFFFFFFFF;
     char buff[20];
-    sprintf(buff,"0x%08lX%08lX",SH,SL);
+    sprintf(buff,"0x%08lX%08lX",DH,DL);
     Serial.println(buff);
   }
 }

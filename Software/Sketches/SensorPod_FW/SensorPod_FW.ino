@@ -83,6 +83,8 @@ void setup() {
   
   Serial.println(F("Setting up XBee...."));
   initXBee();
+  Serial.print(F("  Serial number: "));
+  Serial.println(getXBeeSerialNumberString());
   
   Serial.println(F("Setting up I2C...."));
   Wire.begin();

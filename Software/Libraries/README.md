@@ -9,6 +9,8 @@ Those marked with (†) are not in the Arduino library repository and must be in
   <https://github.com/closedcube/ClosedCube_OPT3001_Arduino>
 - **NeoSWSerial:**
   <https://github.com/SlashDevin/NeoSWSerial>
+- **sps30 (†):**
+  <https://github.com/paulvha/sps30>
 - **Time library:**
   <https://github.com/PaulStoffregen/Time>
 - **TimeAlarms (†):**

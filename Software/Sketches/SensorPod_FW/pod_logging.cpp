@@ -185,8 +185,13 @@ void setupSensorTimers() {
 
   // Illuminance
   if(getRateLight() > 0) {
-    Alarm.timerRepeat(getRateLight(),lightLog);
-    delay(init_delay);
+    if (probeLightSensor()) {
+      Alarm.timerRepeat(getRateLight(),lightLog);
+      delay(init_delay);
+    } else {
+      Serial.println(F("WARNING: Failed to communicate with light sensor."));
+      Serial.println(F("         No readings will be performed."));
+    }
   }
 
   // Sound: turn off background sampling if not needed
@@ -200,8 +205,13 @@ void setupSensorTimers() {
 
   // Humidity/temperature
   if(getRateRH() > 0) {
-    Alarm.timerRepeat(getRateRH(),humidityLog);
-    delay(init_delay);
+    if (probeTemperatureSensor()) {
+      Alarm.timerRepeat(getRateRH(),humidityLog);
+      delay(init_delay);
+    } else {
+      Serial.println(F("WARNING: Failed to communicate with temperature/humidity sensor."));
+      Serial.println(F("         No readings will be performed."));
+    }
   }
 
   // Radiant temperature
@@ -212,33 +222,63 @@ void setupSensorTimers() {
 
   // CO2 sensor
   if(getRateCO2()> 0) {
-    Alarm.timerRepeat(getRateCO2(),co2Log);
-    delay(init_delay);
+    // Communication with CO2 sensor sometimes intermittently fails:
+    // try a few times to ensure sensor really unavailable before
+    // disabling measurements.
+    bool b = false;
+    for (int k = 0; k < 3; k++) {
+      delay(10);
+      b = probeCO2Sensor();
+      if (b) break;
+    }
+    if (b) {
+      Alarm.timerRepeat(getRateCO2(),co2Log);
+      delay(init_delay);
+    } else {
+      Serial.println(F("WARNING: Failed to communicate with CO2 sensor."));
+      Serial.println(F("         No readings will be performed."));
+    }
   }
-
+  
   // CO sensor
   if(getRateCO() > 0) {
     Alarm.timerRepeat(getRateCO(),coLog);  
     delay(init_delay);
   }
-  
+
   // Particulate matter sensor: turn off if not using
   // or if long time between measurements.
-    if(getRatePM() > 120) {
-      stopPMSensor();
-      powerOffPMSensor();
-      Alarm.timerRepeat(getRatePM(), particleWarmup);
-      delay(init_delay);
-    } else if(getRatePM() > 0){
-      powerOnPMSensor();
-      delay(10);
-      startPMSensor();
-      Alarm.timerRepeat(getRatePM(), particleLog);
-      delay(init_delay);
-    } else {
-      stopPMSensor();
-      powerOffPMSensor();
+  // First check if sensor is available.
+  bool pmAvailable = false;
+  if (getRatePM() > 0) {
+    powerOnPMSensor();
+    delay(10);
+    startPMSensor();
+    delay(10);
+    pmAvailable = probePMSensor();
+    if (!pmAvailable) {
+      Serial.println(F("WARNING: Failed to communicate with particulate matter sensor."));
+      Serial.println(F("         No readings will be performed."));
     }
+  }
+  if (!pmAvailable) {
+    stopPMSensor();
+    powerOffPMSensor();
+  } else if(getRatePM() > 120) {
+    stopPMSensor();
+    powerOffPMSensor();
+    Alarm.timerRepeat(getRatePM(), particleWarmup);
+    delay(init_delay);
+  } else if(getRatePM() > 0){
+    powerOnPMSensor();
+    delay(10);
+    startPMSensor();
+    Alarm.timerRepeat(getRatePM(), particleLog);
+    delay(init_delay);
+  } else {
+    stopPMSensor();
+    powerOffPMSensor();
+  }
 }
 
 /* Set up timers for network-related tasks, like updating the

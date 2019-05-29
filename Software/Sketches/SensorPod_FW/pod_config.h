@@ -23,11 +23,11 @@
 #define lightT_default 60
 #define humidityT_default 60
 #define tempT_default 60
-#define soundT_default 120
+#define soundT_default 60
 #define co2T_default 60
-#define pmT_default 600 //Takes two minutes to power on. Should be set to 120+.
+#define pmT_default 600 //Takes two minutes to warm up and settle down
 #define coT_default 60
-#define DeviceID "proto003"
+#define DeviceID "DEFAULT_DEVICEID"
 #define project_default "Demonstration"
 #define server_default "ec2-54-212-239-216.us-west-2.compute.amazonaws.com"
 #define setup_default "1900-01-01"
