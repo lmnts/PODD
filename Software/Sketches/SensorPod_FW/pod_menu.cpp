@@ -328,12 +328,12 @@ void configureProjectSettings() {
     replaceSettingString(s,getPodConfig().project,sizeof(getPodConfig().project),F("Project name"));
   }
   
-  s = serialStringPrompt(F("Project setup date (YYY-MM-DD)"),getPodConfig().setupD);
+  s = serialStringPrompt(F("Project setup date (YYYY-MM-DD)"),getPodConfig().setupD);
   if (!s.equals(getPodConfig().setupD)) {
     replaceSettingString(s,getPodConfig().setupD,sizeof(getPodConfig().setupD),F("Project setup date"));
   }
   
-  s = serialStringPrompt(F("Project teardown date (YYY-MM-DD)"),getPodConfig().teardownD);
+  s = serialStringPrompt(F("Project teardown date (YYYY-MM-DD)"),getPodConfig().teardownD);
   if (!s.equals(getPodConfig().teardownD)) {
     replaceSettingString(s,getPodConfig().teardownD,sizeof(getPodConfig().teardownD),F("Project teardown date"));
   }
