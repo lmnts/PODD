@@ -96,7 +96,9 @@ void setupSDLogging() {
   char filename[32];
   sprintf(filename,"%s%02d%02d%02d%02d.CSV",dirname,
           ((1970+tm.Year) % 100),tm.Month,tm.Day,tm.Hour);
- // Note FILE_WRITE will create non-existent file, append to
+  // Note if file already exists
+  bool exists = SD.exists(filename);
+  // Note FILE_WRITE will create non-existent file, append to
   // existent file.
   SdFile::dateTimeCallback(sdDateTime);
   dataFile = SD.open(filename,FILE_WRITE);
@@ -107,10 +109,12 @@ void setupSDLogging() {
     return;
   }*/
 
-  Serial.print(F("Logging to: "));
+  Serial.print(exists ? F("Logging to existing file: ") :  F("Logging to new file: "));
   Serial.println(filename);
   String header = F("Timestamp, Date/Time, Light, RH, Air Temp (F), Globe Temp, Sound (dB), CO2 (PPM), PM 2.5, PM 10, CO_SpecSensor"); // FILE HEADER
-  dataFile.println(header);
+  if (!exists) {
+    dataFile.println(header);
+  }
 }
 
 void logDataSD(String sensorData) {
@@ -356,6 +360,10 @@ void soundLog() {
 
 void co2Log() {
   int co2 = getCO2();
+  if (co2 < 0) {
+    Serial.println(F("Failed to retrieve CO2 level."));
+    return;
+  }
   Serial.print(F("CO2: "));
   Serial.print(co2);
   Serial.println(F(" ppm"));
