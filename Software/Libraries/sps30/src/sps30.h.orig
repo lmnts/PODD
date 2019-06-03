@@ -252,15 +252,8 @@ typedef struct Description {
 #define SER_WRITE_AUTO_CLEANING         0x82    // write autoclean
 
 #define SHDLC_IND   0x7e                   // header & trailer
-// CS 190603: Excessive timeout locks up microcontroller for
-// extended period if sensor is not present.  If no I2C bus
-// contention, interactions should complete within ~ 20ms.
-//#define TIME_OUT    5000                   // timeout to prevent deadlock read
-#define TIME_OUT    100                    // timeout to prevent deadlock read
-// CS 190603: Delay here does nothing that above timeout does
-// not do?
-//#define RX_DELAY_MS 200                    // wait between write and read
-#define RX_DELAY_MS 20                     // wait between write and read
+#define TIME_OUT    5000                   // timeout to prevent deadlock read
+#define RX_DELAY_MS 200                    // wait between write and read
 
 /*************************************************************/
 /* I2C COMMUNICATION INFORMATION  */

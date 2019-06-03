@@ -11,6 +11,8 @@ Those marked with (†) are not in the Arduino library repository and must be in
   <https://github.com/SlashDevin/NeoSWSerial>
 - **sps30 (†):**
   <https://github.com/paulvha/sps30>
+
+  The version included here has been modified from the original to decrease timeouts when the SPS30 sensor is not present.  This modification is not necessary to operate a PODD, though unnecessary delays will occur when testing sensors or otherwise attempting to read a non-existent SPS30 sensor.
 - **Time library:**
   <https://github.com/PaulStoffregen/Time>
 - **TimeAlarms (†):**
