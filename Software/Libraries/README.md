@@ -12,7 +12,7 @@ Those marked with (†) are not in the Arduino library repository and must be in
 - **sps30 (†):**
   <https://github.com/paulvha/sps30>
 
-  The version included here has been modified from the original to decrease timeouts when the SPS30 sensor is not present.  This modification is not necessary to operate a PODD, though unnecessary delays will occur when testing sensors or otherwise attempting to read a non-existent SPS30 sensor.
+  The version included here has been modified to exclude the use of UART, which is not needed by the PODDs.  Otherwise, import of a software serial library that conflicts with other libraries will occur.  Additionally, I2C timeouts are decreased to avoid unnecessarily long delays when the SPS30 sensor is not present.
 - **Time library:**
   <https://github.com/PaulStoffregen/Time>
 - **TimeAlarms (†):**

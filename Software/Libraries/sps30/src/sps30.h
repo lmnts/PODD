@@ -55,7 +55,9 @@
  * as you board does not have a seperate serial, comment out the line below
  * It will also exclude Software_serial
  */
-#define INCLUDE_UART 1
+// Not used in PODDs.  Also disables software serial, which causes
+// conflicts with other libraries.
+//#define INCLUDE_UART 1
 
 /**
  * On some IDE / boards software Serial is not available
