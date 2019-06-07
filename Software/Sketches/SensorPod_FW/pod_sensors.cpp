@@ -694,6 +694,17 @@ float getLight() {
 // of microphone output.  Conversion to dB(Z) (no frequency weighting)
 // is for this particular microphone and setup.
 
+// TODO: Change below statistics to keep track of (ADC - 512) values
+// where 512 is half of ADC range (zero volume, in ideal case).
+// This would reduce overflow issues, but non-offset statistical
+// quantities can easily be calculated (notably, no impact to s.d.).
+// If x0 is an offset and uk = xk - x0, where xk is the kth ADC
+// measurement:
+//     <u> = <x> - x0
+//     <x> = <u> + x0
+//     <u^2> = <x^2> - 2 x0 <x> + <x>^2
+//     <x^2> = <u^2> + 2 x0 <u> + <u>^2
+//     \sigma_u^2 = \sigma_x^2
 
 /* Sound data structure. */
 struct SoundData {
