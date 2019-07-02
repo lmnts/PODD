@@ -89,7 +89,7 @@ The PODD can be built entirely on a breadboard for initial prototyping and testi
 
 A full list of parts can be found in [this spreadsheet](Hardware/PODD_v1.2_PartsList.xlsx).
 
-To assemble the PODD, see [this assembly document](Hardware/PODDAssemby.pdf).  This document also describes issues with various sensors and other components, and how to operate the sensors.
+To assemble the PODD, see [this assembly document](Hardware/PODD_v1.2_Assembly.pdf).  This document also describes issues with various sensors and other components, and how to operate the sensors.
 
 
 ### Software Setup
