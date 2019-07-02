@@ -71,7 +71,7 @@ The current version of PODD uses the following components to run:
 
 The current version of PODD uses the following sensors:
 
-  * Sensirior SPS30: particulate matter
+  * Sensirion SPS30: particulate matter
   * COZIR-A: CO<sub>2</sub>
   * SPEC Sensor 3SP_CO_1000: CO
   * Honeywell HIH8120-021: dry bulb temperature and humidity
