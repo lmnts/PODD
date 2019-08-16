@@ -50,6 +50,14 @@ bool podConfigChanged();
 void setPodConfigChanged();
 void clearPodConfigChanged();
 
+void savePodRates();
+bool podRatesChanged();
+void setPodRatesChanged();
+void clearPodRatesChanged();
+
+bool getDebugMode();
+void setDebugMode(bool debug);
+
 void replaceSettingString(String s, char arr[], size_t len, String label);
 void updateSensorTime(String label, int *v);
 

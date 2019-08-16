@@ -121,6 +121,12 @@ void mainMenu() {
     showMenuClockSettings();
     // Show compilation info
     Serial.println(F("  (I) Compilation info"));
+    // Enable or disable debug mode
+    if (getDebugMode()) {
+      Serial.println(F("  (D) Disable debug mode"));
+    } else {
+      Serial.println(F("  (D) Enable debug mode"));
+    }
     //Serial.println(F("  "));
     Serial.println();
     // Leave menu and enter automatic mode
@@ -175,9 +181,16 @@ void mainMenu() {
         printCompilationInfo("  ","");
         Serial.println();
         break;
+      case 'D':
+      case 'd':
+        configureDebugSettings();
+        break;
       case 'Q':
       case 'q':
-        if (podConfigChanged()) savePodConfig();
+        // Moved to later in sketch's startup to allow for
+        // for more opportunities to connect to the network first.
+        //if (podConfigChanged()) savePodConfig();
+        //if (podRateChanged()) savePodRates();
         showContinuePrompt = false;
         return;
         break;
@@ -437,7 +450,7 @@ void configureNetworkSettings() {
   b = serialYesNoPrompt(F("(Re)initialize ethernet connection (y/n)?"),true,false);
   if (b) {
     Serial.println(F("Initializing ethernet...."));
-    ethernetBegin();
+    ethernetBegin(1);
   }
   
   Serial.println();
@@ -521,6 +534,33 @@ void configureClockSettings() {
       Serial.print(F("    unix timestamp:   "));
       Serial.println(utc);
     }
+  }
+  
+  Serial.println();
+}
+
+
+//------------------------------------------------------------------------------
+/* Prompt the user to update debugging settings over the serial interface. */
+void configureDebugSettings() {
+  bool b;
+
+  Serial.println(F("Debugging mode enables additional serial output.  For drone"));
+  Serial.println(F("devices, this means keeping the USB system active, which is"));
+  Serial.println(F("normally disabled to save power.  Debug mode is disabled"));
+  Serial.println(F("when the device starts and must be manually enabled each"));
+  Serial.println(F("time it is desired."));
+  Serial.println(F(""));
+  b = false;
+  if (getDebugMode()) {
+    Serial.println(F("Debug mode is currently enabled."));
+    b = serialYesNoPrompt(F("Disable debug mode (y/n)?"),true,false);
+  } else {
+    Serial.println(F("Debug mode is currently disabled."));
+    b = serialYesNoPrompt(F("Enable debug mode (y/n)?"),true,false);
+  }
+  if (b) {
+    setDebugMode(!getDebugMode());
   }
   
   Serial.println();

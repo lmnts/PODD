@@ -44,6 +44,10 @@ PodConfigStruct storage = {
 };
 bool configChanged = false;
 
+bool ratesChanged = false;
+
+bool debugMode = false;
+
 
 //--------------------------------------------------------------------------------------------- [Intro and Setup]
 
@@ -60,27 +64,6 @@ void savePodConfig() { // Save configuration to SD, EEPROM, and DB.
     EEPROM.put(EEPROM_CONFIG_ADDR + t, *((char*)&storage + t));
   }
   
-  // Save to DB - Rates
-  // If these are sent too fast over XBee network by non-coordinators,
-  // there may be buffer overflows and/or packet loss
-  //const unsigned long delta = (storage.coord == 'Y') ? 250 : 1000;
-  // XBee rate upload routine already adds delay to avoid pileup.
-  const unsigned long delta = (storage.coord == 'Y') ? 250 : 250;
-  updateRate(storage.devid, "Light", storage.lightT, Datetime);
-  delay(delta);
-  updateRate(storage.devid, "Humidity", storage.humidityT, Datetime);
-  delay(delta);
-  updateRate(storage.devid, "GlobeTemp", storage.tempT, Datetime);
-  delay(delta);
-  updateRate(storage.devid, "Sound", storage.soundT, Datetime);
-  delay(delta);
-  updateRate(storage.devid, "CO2", storage.co2T, Datetime);
-  delay(delta);
-  updateRate(storage.devid, "Particle", storage.pmT, Datetime);
-  delay(delta);
-  updateRate(storage.devid, "CO", storage.coT, Datetime);
-  delay(delta);
-
   if (storage.coord == 'Y') {
     writeSDConfig(storage.devid, storage.room, "Coordinator", storage.project, storage.uploadT, storage.setupD, storage.teardownD, Datetime, storage.networkID);
     updateConfig(storage.devid, storage.room, "Coordinator", storage.project, storage.uploadT, storage.setupD, storage.teardownD, Datetime, storage.networkID);
@@ -120,6 +103,56 @@ void setPodConfigChanged() {
 
 void clearPodConfigChanged() {
   configChanged = false;
+}
+
+void savePodRates() { // Save rates to DB.  
+  //String Datetime = getStringDatetime();
+  String Datetime = getDBDateTimeString();
+  Datetime.toCharArray(storage.lastUpdate, 20);
+  
+  // Save to DB - Rates
+  // If these are sent too fast over XBee network by non-coordinators,
+  // there may be buffer overflows and/or packet loss
+  //const unsigned long delta = (storage.coord == 'Y') ? 250 : 1000;
+  // XBee rate upload routine already adds delay to avoid pileup.
+  const unsigned long delta = (storage.coord == 'Y') ? 250 : 250;
+  updateRate(storage.devid, "Light", storage.lightT, Datetime);
+  delay(delta);
+  updateRate(storage.devid, "Humidity", storage.humidityT, Datetime);
+  delay(delta);
+  updateRate(storage.devid, "GlobeTemp", storage.tempT, Datetime);
+  delay(delta);
+  updateRate(storage.devid, "Sound", storage.soundT, Datetime);
+  delay(delta);
+  updateRate(storage.devid, "CO2", storage.co2T, Datetime);
+  delay(delta);
+  updateRate(storage.devid, "Particle", storage.pmT, Datetime);
+  delay(delta);
+  updateRate(storage.devid, "CO", storage.coT, Datetime);
+  delay(delta);
+
+  // Reset rates change flag
+  clearPodRatesChanged();
+}
+
+bool podRatesChanged() {
+  return ratesChanged;
+}
+
+void setPodRatesChanged() {
+  ratesChanged = true;
+}
+
+void clearPodRatesChanged() {
+  ratesChanged = false;
+}
+
+bool getDebugMode() {
+  return debugMode;
+}
+
+void setDebugMode(bool debug) {
+  debugMode = debug;
 }
 
 char * getServer() {
@@ -196,7 +229,7 @@ void updateSensorTime(String label, int *v) {
   int i = serialIntegerPrompt(String("") + label,true,*v);
   if (i < 0) i = 0;
   if (i != *v) {
-    setPodConfigChanged();
+    setPodRatesChanged();
     *v = i;
     if (*v > 0) {
       Serial.print(F("  Interval changed to "));
