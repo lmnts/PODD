@@ -704,6 +704,7 @@ void sensorMenuCalibrateCO2Sensor() {
     Serial.print(F("CO2 sensor set to "));
     Serial.print(ppm);
     Serial.println(F(" ppm."));
+    delay(600);  // 2 Hz reading rate, up to 100ms delay for readings
     int ppm1 = getCO2();
     Serial.print(F("CO2 sensor now measures "));
     Serial.print(ppm1);
