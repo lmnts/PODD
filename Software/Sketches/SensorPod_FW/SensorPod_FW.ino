@@ -140,6 +140,20 @@ void setup() {
   Serial.print(F("  Destination:   "));
   Serial.println(getXBeeDestinationString());
 
+  // Try again to connect coordinator to network, if not
+  // currently connected.
+  if (getModeCoord()) {
+    if (!ethernetConnected()) {
+      Serial.print(F("Re-attempting to connect to the network.... ("));
+      ethernetBegin(3);
+    }
+    //ethernetMaintain();
+    if (!ethernetConnected()) {
+      Serial.println(F("Internet connection could not be established.  Readings will not be"));
+      Serial.println(F("pushed to remote database until connection can be established."));
+    }
+  }
+  
   // Save and upload to database the current PODD configuration.
   // Even if the configuration has not changed, these logs will
   // include a useful timestamp indicating when the PODD started.
@@ -199,20 +213,6 @@ void setup() {
       Serial.flush();
       Serial.end();
       USBCON |= (1<<FRZCLK); // Disable USB to save power.
-    }
-  }
-  
-  // Try again to connect coordinator to network, if not
-  // currently connected.
-  if (getModeCoord()) {
-    if (!ethernetConnected()) {
-      Serial.print(F("Re-attempting to connect to the network.... ("));
-      ethernetBegin(3);
-    }
-    //ethernetMaintain();
-    if (!ethernetConnected()) {
-      Serial.println(F("Internet connection could not be established.  Readings will not be"));
-      Serial.println(F("pushed to remote database until connection can be established."));
     }
   }
   
