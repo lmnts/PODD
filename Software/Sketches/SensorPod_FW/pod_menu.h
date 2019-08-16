@@ -67,6 +67,7 @@ void configureNodeSettings();
 void configureSensorTimingSettings();
 void configureNetworkSettings();
 void configureClockSettings();
+void configureDebugSettings();
 
 // Sensor menu
 void sensorMenu();

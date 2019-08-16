@@ -1030,6 +1030,14 @@ String getMACAddressString() {
 
 
 void ethernetSetup() {
+  // It is useful to increase the HTTP post timeout for debugging,
+  // but long timeouts should not be used in production as the
+  // coordinator can easily get overwhelmed if there are issues
+  // connecting to the server.
+  #if HTTP_POST_TIMEOUT >= 1000
+  Serial.println(F("******** DEBUG: Long HTTP post timeout in use ********"));
+  #endif
+  
   // Provide power to the ethernet board
   pinMode(ETHERNET_EN, OUTPUT);
   digitalWrite(ETHERNET_EN, HIGH);
@@ -1056,11 +1064,11 @@ void ethernetSetup() {
   initMACAddress();
   Serial.print(F("Ethernet MAC Address: "));
   Serial.println(getMACAddressString());
-  
+
   // Connect to the network.
   // For whatever reason, this seems to fail 20-30% of the time,
   // at least when testing on LMN network.
-  ethernetBegin();
+  ethernetBegin(1);
   
   // Sometimes a second attempt will solve DHCP issues.
   if (!ethStatus.connected()) {
@@ -1100,47 +1108,55 @@ void ethernetSetup() {
   }
 }
 
-bool ethernetBegin() {
+bool ethernetBegin(int attempts) {
   //Serial.println(F("Starting ethernet...."));
 
+  if (attempts < 1) attempts = 1;
+  
   // Power cycle ethernet
   //digitalWrite(ETHERNET_EN,LOW);
   //delay(10);
   //digitalWrite(ETHERNET_EN,HIGH);
   //delay(10);
-
-  // Reset ethernet chip
-  // WIZnet W5100 documentation says this needs to be pulled low for
-  // as short as 2us to reinitialize all internal registers to their
-  // default states.  However, it takes 10ms to reset to internal
-  // PLOCK (whatever that is...).
-  digitalWrite(WIZ812MJ_RESET_PIN, LOW);
-  delay(1);
-  digitalWrite(WIZ812MJ_RESET_PIN, HIGH);
-  delay(10);
-
-  //Ethernet.init(WIZ812MJ_ES_PIN);
-
-  // Link status (not supported by W5100)
-  //Serial.print(F("Ethernet link status: "));
-  //Serial.println(Ethernet.linkStatus());
-
-  // For whatever reason, this seems to fail 20-30% of the time,
-  // at least when testing on LMN network.  Firmware should be
-  // capable of calling this routine again if begin() fails, perhaps
-  // after some interval of time to avoid getting stuck in a
-  // reinitialization loop (if the network is actually inaccessible).
-  if (!Ethernet.begin(ethMACAddress,ETHERNET_START_TIMEOUT)) {
-    ethStatus.restarted(false);
-    Serial.println(F("Ethernet initialization failed.  Readings will not be pushed to remote"));
-    Serial.println(F("database until connection can be established."));
-    return false;
-  } else {
-    ethStatus.restarted(true);
-    Serial.print(F("Ethernet initialized. IP: "));
-    Serial.println(Ethernet.localIP());
-    return true;
+  
+  // Try multiple times to start ethernet
+  for (int k = 1; k <= attempts; k++) {
+    // Reset ethernet chip
+    // WIZnet W5100 documentation says this needs to be pulled low for
+    // as short as 2us to reinitialize all internal registers to their
+    // default states.  However, it takes 10ms to reset to internal
+    // PLOCK (whatever that is...).
+    digitalWrite(WIZ812MJ_RESET_PIN, LOW);
+    delay(1);
+    digitalWrite(WIZ812MJ_RESET_PIN, HIGH);
+    delay(10);
+    
+    //Ethernet.init(WIZ812MJ_ES_PIN);
+    
+    // Link status (not supported by W5100)
+    //Serial.print(F("Ethernet link status: "));
+    //Serial.println(Ethernet.linkStatus());
+    
+    // For whatever reason, this seems to fail 20-30% of the time,
+    // at least when testing on LMN network.  Firmware should be
+    // capable of calling this routine again if begin() fails, perhaps
+    // after some interval of time to avoid getting stuck in a
+    // reinitialization loop (if the network is actually inaccessible).
+    if (!Ethernet.begin(ethMACAddress,ETHERNET_START_TIMEOUT)) {
+      ethStatus.restarted(false);
+      if (k < attempts) {
+        Serial.println(F("Ethernet initialization failed.  Retrying..."));
+      } else {
+        Serial.println(F("Ethernet initialization failed."));
+      }
+    } else {
+      ethStatus.restarted(true);
+      Serial.print(F("Ethernet initialized. IP: "));
+      Serial.println(Ethernet.localIP());
+      return true;
+    }
   }
+  return false;
 }
 
 
@@ -1163,10 +1179,10 @@ bool ethernetConnected() {
 
 
 void ethernetMaintain() {
-  // Restart ethernet if not have had recent successful connection
+  // Restart ethernet if have not had recent successful connection
   if (ethStatus.needsRestart()) {
     Serial.println(F("Extended period without successful internet connection.  Restarting ethernet...."));
-    ethernetBegin();
+    ethernetBegin(1);
     return;
   }
 
@@ -1367,8 +1383,10 @@ byte postPage(const char* domainBuffer, int thisPort, const char* page, const ch
       // an ethernet connection issue.
       //ethStatus.failed();
     } else {
-      //Serial.print(F("Server response time: "));
-      //Serial.println(millis() - t0);
+      if (getDebugMode()) {
+        Serial.print(F("Server response time: "));
+        Serial.println(millis() - t0);
+      }
       // Successfully connected to server:
       // clear bad ethernet connection flags
       ethStatus.succeeded();

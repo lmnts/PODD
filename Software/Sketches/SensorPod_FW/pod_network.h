@@ -59,7 +59,7 @@ void initMACAddress();
 String getMACAddressString();
 
 void ethernetSetup();
-bool ethernetBegin();
+bool ethernetBegin(int attempts=1);
 bool ethernetHasIPAddress();
 bool ethernetConnected();
 void ethernetMaintain();

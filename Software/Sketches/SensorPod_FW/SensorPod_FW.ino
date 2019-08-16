@@ -139,6 +139,33 @@ void setup() {
   Serial.println(getXBeeSerialNumberString());
   Serial.print(F("  Destination:   "));
   Serial.println(getXBeeDestinationString());
+
+  // Try again to connect coordinator to network, if not
+  // currently connected.
+  if (getModeCoord()) {
+    if (!ethernetConnected()) {
+      Serial.print(F("Re-attempting to connect to the network.... ("));
+      ethernetBegin(3);
+    }
+    //ethernetMaintain();
+    if (!ethernetConnected()) {
+      Serial.println(F("Internet connection could not be established.  Readings will not be"));
+      Serial.println(F("pushed to remote database until connection can be established."));
+    }
+  }
+  
+  // Save and upload to database the current PODD configuration.
+  // Even if the configuration has not changed, these logs will
+  // include a useful timestamp indicating when the PODD started.
+  savePodConfig();
+  // Can optionally only save/upload config if it changed since
+  // last time it was logged.
+  //if (podConfigChanged()) savePodConfig();
+
+  // Upload PODD sensor reading rates, only if they have changed
+  // (this is slow due to numerous network packets being sent,
+  // so we do not do this every time).
+  if (podRatesChanged()) savePodRates();
   
   // Begin background process to pull data from the XBee for later
   // processing.  Used by coordinator to buffer packets arriving from
@@ -175,10 +202,9 @@ void setup() {
     Serial.println(F("Powering down ethernet...."));
     digitalWrite(ETHERNET_EN, LOW);
     
-    #define SERIAL_DEBUG
-    #if defined(SERIAL_DEBUG)
+    if (getDebugMode()) {
       Serial.println(F("DEBUG: Drone serial output will not be disabled."));
-    #else
+    } else {
       Serial.println(F("Powering down USB...."));
       Serial.println(F("Serial output will now end."));
       Serial.println();
@@ -187,13 +213,7 @@ void setup() {
       Serial.flush();
       Serial.end();
       USBCON |= (1<<FRZCLK); // Disable USB to save power.
-    #endif
-  }
-  
-  if (getModeCoord() && !ethernetConnected()) {
-    Serial.println(F("Retrying to connect ethernet...."));
-    ethernetBegin();
-    ethernetMaintain();
+    }
   }
   
   // turn off LED to save power
