@@ -139,6 +139,8 @@ void setup() {
   Serial.println(getXBeeSerialNumberString());
   Serial.print(F("  Destination:   "));
   Serial.println(getXBeeDestinationString());
+  Serial.print(F("  PODD group:    "));
+  Serial.println(getXBeeGroup());
 
   // Try again to connect coordinator to network, if not
   // currently connected.

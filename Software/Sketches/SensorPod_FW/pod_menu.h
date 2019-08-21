@@ -59,6 +59,7 @@ void showMenuNodeSettings();
 void showMenuSensorTimingEntry(String s, int v);
 void showMenuSensorTimingSettings();
 void showMenuNetworkSettings();
+void showMenuXBeeSettings();
 void showMenuClockSettings();
 
 // Interactive prompts to configure various settings
@@ -66,6 +67,7 @@ void configureProjectSettings();
 void configureNodeSettings();
 void configureSensorTimingSettings();
 void configureNetworkSettings();
+void configureXBeeSettings();
 void configureClockSettings();
 void configureDebugSettings();
 

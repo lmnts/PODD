@@ -26,6 +26,8 @@ void setXBeeDestination(const uint64_t dest);
 
 String getXBeeSerialNumberString();
 String getXBeeDestinationString();
+uint8_t getXBeeGroup();
+void setXBeeGroup(uint8_t group);
 
 // XBee routines
 void initXBee();

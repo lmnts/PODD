@@ -64,13 +64,49 @@ volatile bool xbeeBufferHold = false;
 // read ISR run time must be shorter than that so it does not interfere
 // with the Serial1 ISR timing.
 
+// MOVED XBEE VALUES TO STRUCTURE BELOW.
 // The XBee's serial number.  To be extracted from XBee.
-uint64_t xbeeSerialNumber = 0;
+//uint64_t xbeeSerialNumber = 0;
 // If not a coordinator, the destination is the serial number of the
 // coordinator.  Initially extracted from XBee, but will be updated from
 // network broadcast by coordinator.  Cached here instead of rereading
 // from XBee due to ~ 2 second command mode period for each read.
-uint64_t xbeeDestination = 0;
+//uint64_t xbeeDestination = 0;
+
+// Structure to store various XBee configuration settings.
+// Useful to retrieve/set in bulk as each switch into command mode
+// takes 2+ seconds.
+struct XBeeConfigStruct {
+  // NI: node identifier.
+  String identifier = "";
+  // CE: messaging mode.
+  // Should be 0 for router/drone, 1 for coordinator.
+  uint8_t coordinator = 0;
+  // SH+SL: XBee serial number
+  uint64_t serialNumber = 0;
+  // DH+DL: messaging destination.
+  // If this PODD is not a coordinator, the destination is the
+  // serial number of the coordinator.  Initially extracted from
+  // XBee, but will be updated from network broadcast by coordinator.
+  uint64_t destination = 0;
+  // HP: preamble ID (0-7).
+  // XBee's with different preambles are essentially on different
+  // networks; this can be used to create distinct PODD network
+  // groups.  Best to avoid 0 as that is the out-of-box default
+  // (most likely to have interference with any non-PODD XBees
+  // in the area).
+  uint8_t preamble = -1;
+  // ID: network ID (0x0000 - 0x7FFF)
+  uint32_t network = -1;
+} xbeeConfig;
+
+// Network group number (1-7).
+// Used to create different PODD networks: each active group
+// should have one (and only one) coordinator unit.  PODDs
+// with different group numbers do not communicate with each
+// other.
+// Corresponds to XBee preamble ID.
+uint8_t xbeeGroup = 0;
 
 String set1;
 String set2;
@@ -367,8 +403,16 @@ String uint64ToHexString(uint64_t v) {
   //return s;
 }
 
-String getXBeeSerialNumberString() {return uint64ToHexString(xbeeSerialNumber);}
-String getXBeeDestinationString() {return uint64ToHexString(xbeeDestination);}
+String getXBeeSerialNumberString() {return uint64ToHexString(xbeeConfig.serialNumber);}
+String getXBeeDestinationString() {return uint64ToHexString(xbeeConfig.destination);}
+
+uint8_t getXBeeGroup() {
+  return xbeeGroup;
+}
+
+void setXBeeGroup(uint8_t group) {
+  if ((group >= 1) && (group <= 7)) xbeeGroup = group;
+}
 
 
 
@@ -391,11 +435,22 @@ void initXBee() {
   xbeeBufferHold = true;
   resetXBeeBuffer();
 
-  // Get XBee serial number and current destination.
+  // Get various XBee configuration settings.
+  // Not all these are currently being used in the firmware, but
+  // these settings might be useful at some point.
   startXBeeCommandMode();
-  xbeeSerialNumber = getXBeeSerialNumber();
-  xbeeDestination = getXBeeDestination();
+  //xbeeSerialNumber = getXBeeSerialNumber();
+  //xbeeDestination = getXBeeDestination();
+  xbeeConfig.identifier = getXBeeCommandResponse(F("ATNI"));
+  xbeeConfig.coordinator = (uint8_t)getXBeeNumericResponse(F("ATCE"));
+  xbeeConfig.serialNumber = getXBeeSerialNumber();
+  xbeeConfig.destination = getXBeeDestination();
+  xbeeConfig.preamble = (uint8_t)getXBeeNumericResponse(F("ATHP"));
+  xbeeConfig.network = getXBeeNumericResponse(F("ATID"));
   stopXBeeCommandMode(false);
+
+  // PODD group number is equivalent to preamble ID
+  xbeeGroup = (xbeeConfig.preamble > 0) ? xbeeConfig.preamble : 0;
   
   //Serial.println(F("  XBee serial number: ") + getXBeeSerialNumberString());
   //Serial.println(F("  XBee destination:   ") + getXBeeDestinationString());
@@ -409,6 +464,18 @@ void initXBee() {
 void configureXBee(const bool coord) {
   // Takes ~ 2 seconds to enter command mode.
   startXBeeCommandMode();
+
+  // Update XBee identifier to device ID (if necessary)
+  if (!xbeeConfig.identifier.equals(getDevID())) {
+    xbeeConfig.identifier = getDevID();
+    submitXBeeCommand(F("ATNI ") + xbeeConfig.identifier);
+  }
+
+  // Update XBee preamble ID to PODD XBee group number (if necessary)
+  if ((xbeeConfig.preamble != xbeeGroup) && (xbeeGroup >= 1) && (xbeeGroup <= 7)) {
+    xbeeConfig.preamble = xbeeGroup;
+    submitXBeeCommand(F("ATHP ") + String(xbeeConfig.preamble,HEX));
+  }
   
   // Settings for coordinator
   if (coord) {
@@ -418,8 +485,8 @@ void configureXBee(const bool coord) {
     // Note command string omits '0x'.
     //submitXBeeCommand(F("ATDH 00000000"));
     //submitXBeeCommand(F("ATDL 0000FFFF"));
-    xbeeDestination = 0xFFFF;
-    setXBeeDestination(xbeeDestination);
+    xbeeConfig.destination = 0xFFFF;
+    setXBeeDestination(xbeeConfig.destination);
     
   // Settings for drone
   } else {
@@ -440,11 +507,11 @@ void configureXBee(const bool coord) {
     // otherwise broadcast data until we get the coordinator address
     // via a broadcast.
     // XBee 900HP serial numbers are of form 0x0013A2XXXXXXXXXX.
-    if (((xbeeDestination >> 40) & 0xFFFFFF) == 0x0013A2) {
+    if (((xbeeConfig.destination >> 40) & 0xFFFFFF) == 0x0013A2) {
       // do nothing (keep current destination)
     } else {
-      xbeeDestination = 0xFFFF;
-      setXBeeDestination(xbeeDestination);
+      xbeeConfig.destination = 0xFFFF;
+      setXBeeDestination(xbeeConfig.destination);
     }
   }
   
@@ -942,8 +1009,8 @@ void broadcastCoordinatorAddress() {
   if (!getModeCoord()) return;
   
   Serial.println(F("Broadcasting coordinator address to all nodes...."));
-  uint32_t SH = (xbeeSerialNumber >> 32) & 0xFFFFFFFF;
-  uint32_t SL = (xbeeSerialNumber >>  0) & 0xFFFFFFFF;
+  uint32_t SH = (xbeeConfig.serialNumber >> 32) & 0xFFFFFFFF;
+  uint32_t SL = (xbeeConfig.serialNumber >>  0) & 0xFFFFFFFF;
   
   // Zero-padded hex string.
   char buff[18];
@@ -976,14 +1043,14 @@ void processDestinationPacket(const String packet) {
   }
   
   // Update destination address only if it has changed
-  if (v != xbeeDestination) {
-    xbeeDestination = v;
+  if (v != xbeeConfig.destination) {
+    xbeeConfig.destination = v;
     startXBeeCommandMode();
-    setXBeeDestination(xbeeDestination);
+    setXBeeDestination(xbeeConfig.destination);
     stopXBeeCommandMode(true);
     Serial.print(F("Coordinator (destination) address updated: "));
-    uint32_t DH = (xbeeDestination >> 32) & 0xFFFFFFFF;
-    uint32_t DL = (xbeeDestination >>  0) & 0xFFFFFFFF;
+    uint32_t DH = (xbeeConfig.destination >> 32) & 0xFFFFFFFF;
+    uint32_t DL = (xbeeConfig.destination >>  0) & 0xFFFFFFFF;
     char buff[20];
     sprintf(buff,"0x%08lX%08lX",DH,DL);
     Serial.println(buff);
@@ -998,8 +1065,8 @@ void initMACAddress() {
   // Use XBee's serial number for ethernet MAC address
   // (as it does not have its own). Serial number should
   // be cached already.
-  uint32_t SH = (xbeeSerialNumber >> 32) & 0xFFFFFFFF;
-  uint32_t SL = (xbeeSerialNumber >>  0) & 0xFFFFFFFF;
+  uint32_t SH = (xbeeConfig.serialNumber >> 32) & 0xFFFFFFFF;
+  uint32_t SL = (xbeeConfig.serialNumber >>  0) & 0xFFFFFFFF;
   // If failed to get XBee serial number, provide a default.
   // For XBee S3B, SH would be 0x0013A2XX; we use the same here
   // to allow for network whitelisting by MAC range.

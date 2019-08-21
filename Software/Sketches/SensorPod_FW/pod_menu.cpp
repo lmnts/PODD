@@ -116,6 +116,9 @@ void mainMenu() {
     // Ethernet settings
     Serial.println(F("  (N) Network settings"));
     showMenuNetworkSettings();
+    // XBee settings
+    Serial.println(F("  (X) XBee settings"));
+    showMenuXBeeSettings();
     // RTC time/settings
     Serial.println(F("  (C) Clock settings"));
     showMenuClockSettings();
@@ -170,6 +173,10 @@ void mainMenu() {
       case 'N':
       case 'n':
         configureNetworkSettings();
+        break;
+      case 'X':
+      case 'x':
+        configureXBeeSettings();
         break;
       case 'C':
       case 'c':
@@ -292,6 +299,29 @@ void showMenuNetworkSettings() {
   Serial.print((FType)MENU_INDENT2);
   Serial.print(F("DNS server:  "));
   Serial.print(Ethernet.dnsServerIP());
+  Serial.println();
+  //Serial.print((FType)MENU_INDENT2);
+  //Serial.print(F("XBee group:     "));
+  //Serial.print(getXBeeGroup());
+  //Serial.println();
+}
+
+
+//----------------------------------------------
+/* Prints to serial various XBee settings.
+   Intended to be used just below menu's XBee settings entry. */
+void showMenuXBeeSettings() {
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Serial number:  "));
+  Serial.print(getXBeeSerialNumberString());
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Destination:    "));
+  Serial.print(getXBeeDestinationString());
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Network group:  "));
+  Serial.print(getXBeeGroup());
   Serial.println();
 }
 
@@ -451,6 +481,45 @@ void configureNetworkSettings() {
   if (b) {
     Serial.println(F("Initializing ethernet...."));
     ethernetBegin(1);
+  }
+  
+  Serial.println();
+}
+
+
+//------------------------------------------------------------------------------
+/* Prompt the user to update XBee settings over the serial interface. */
+void configureXBeeSettings() {
+  int i;
+
+  Serial.println(F("XBee settings:"));
+  Serial.print(F("  Serial number:   "));
+  Serial.print(getXBeeSerialNumberString());
+  Serial.println();
+  Serial.print(F("  Destination:     "));
+  Serial.print(getXBeeDestinationString());
+  Serial.println();
+  Serial.println();
+  Serial.println(F("The destination address is that of the most recent coordinator"));
+  Serial.println(F("this PODD has been associated with (or the XBee broadcast"));
+  Serial.println(F("address if this PODD was a coordinator itself).  If the"));
+  Serial.println(F("coordinator changes, the new address will automatically be"));
+  Serial.println(F("acquired after this PODD enters running mode.  It may take"));
+  Serial.println(F("1-2 minutes to acquire the new address."));
+  Serial.println(F(""));
+  Serial.println(F("PODDs may be configured in multiple independent groups, each"));
+  Serial.println(F("with its own XBee network.  Each group must have its own"));
+  Serial.println(F("coordinator unit to upload sensor data within that group."));
+  Serial.println(F(""));
+  
+  i = serialIntegerPrompt(F("New PODD group (1-7) or enter to keep current"),true,getXBeeGroup());
+  if (i != getXBeeGroup()) {
+    if ((i >= 1) && (i <= 7)) {
+      Serial.println(F("Updating PODD group to ") + String(i) + F("."));
+      setXBeeGroup(i);
+    } else {
+      Serial.println(F("Invalid group: must be within 1-7."));
+    }
   }
   
   Serial.println();
