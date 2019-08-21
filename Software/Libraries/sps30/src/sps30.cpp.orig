@@ -484,27 +484,7 @@ uint8_t SPS30::GetValues(struct sps_values *v)
     }
 #if defined INCLUDE_I2C
     if (_Sensor_Comms == I2C_COMMS) {
-        offset = 0;
-        
-        // Probe sensor until data available or timeout.
-        // Default measurement interval is 1 second; should
-        // not need to wait longer than this.
-        // Returns immediately if sensor not responding.
-        uint32_t t0 = millis();
-        do {
-          I2C_fill_buffer(I2C_READ_DATA_RDY_FLAG);
-          uint8_t status = I2C_SetPointer_Read(2);
-          if (status != ERR_OK) return status;
-          if (_Receive_BUF[1] == 1) break;
-          delay(10);
-        } while (millis() - t0 < 1050);
-        if (_Receive_BUF[1] != 1) return ERR_TIMEOUT;
-        
-        I2C_fill_buffer(I2C_READ_MEASURED_VALUE);
-        ret = I2C_SetPointer_Read(I2C_Max_bytes);
-        if (ret != ERR_OK) return ret;
 
-        /*
         loop = 0;
         offset = 0;
 
@@ -527,7 +507,6 @@ uint8_t SPS30::GetValues(struct sps_values *v)
         } while(loop++ < 3);
 
         if (loop == 3) return(ERR_TIMEOUT);
-        */
     }
     else
 #endif // INCLUDE_I2C
