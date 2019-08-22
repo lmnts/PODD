@@ -40,6 +40,7 @@ float getLight();
 
 // Sound sensor
 void initSoundSensor();
+bool probeSoundSensor();
 float getSound();
 void startSoundSampling();
 void stopSoundSampling();

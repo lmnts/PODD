@@ -612,7 +612,7 @@ void configureClockSettings() {
 //------------------------------------------------------------------------------
 /* Prompt the user to update debugging settings over the serial interface. */
 void configureDebugSettings() {
-  bool b;
+  //bool b;
 
   Serial.println(F("Debugging mode enables additional serial output.  For drone"));
   Serial.println(F("devices, this means keeping the USB system active, which is"));
@@ -620,6 +620,7 @@ void configureDebugSettings() {
   Serial.println(F("when the device starts and must be manually enabled each"));
   Serial.println(F("time it is desired."));
   Serial.println(F(""));
+  /*
   b = false;
   if (getDebugMode()) {
     Serial.println(F("Debug mode is currently enabled."));
@@ -630,6 +631,14 @@ void configureDebugSettings() {
   }
   if (b) {
     setDebugMode(!getDebugMode());
+  }
+  */
+  
+  setDebugMode(!getDebugMode());
+  if (getDebugMode()) {
+    Serial.println(F("Debug mode is now enabled."));
+  } else {
+    Serial.println(F("Debug mode is now disabled."));
   }
   
   Serial.println();

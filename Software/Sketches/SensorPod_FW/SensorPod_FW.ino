@@ -66,8 +66,9 @@ void setup() {
   #ifdef CLOCK_TESTING
   testClock(-1,1000);
   #endif
-  
+
   #ifdef SENSOR_TESTING
+  Serial.println(F("######## DEBUG: HIGHER SOUND SAMPLING RATE ########"));
   Wire.begin();
   // Sound sensor testing
   testSoundSensor(-1,1000);

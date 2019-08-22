@@ -74,6 +74,10 @@ ClosedCube_OPT3001 opt3001;
 // Sampling occurs through ISR, but rate should be limited to
 // only what is necessary as this will impact other ISRs.
 #define SOUND_SAMPLE_INTERVAL_US 10000
+#ifdef SENSOR_TESTING
+  #undef SOUND_SAMPLE_INTERVAL_US
+  #define SOUND_SAMPLE_INTERVAL_US 1000
+#endif
 // Flag to indicate if sound is currently being sampled
 volatile bool soundSampling = false;
 
@@ -255,6 +259,14 @@ void initSensors() {
      Unknown: sensor presence cannot be determined
      */
 void printSensorCheck() {
+  // Temporarily power up PM sensor if powered down
+  bool wasPMPowered = isPMSensorPowered();
+  if (!wasPMPowered) {
+    Serial.println(F("Powering up particulate matter sensor...."));
+    powerOnPMSensor();
+    delay(100);
+  }
+  
   // Must cast as (const __FlashStringHelper*) when printing...
   //static const char AVAILABLE[] PROGMEM   = "         available         ";
   //static const char UNAVAILABLE[] PROGMEM = "        unavailable        ";
@@ -275,13 +287,14 @@ void printSensorCheck() {
   Serial.print(probeLightSensor() ? AVAILABLE : UNAVAILABLE);
   Serial.println();
   Serial.print(F("    Sound:                   "));
-  Serial.print(UNCHECKABLE);
+  //Serial.print(UNCHECKABLE);
+  Serial.print(probeSoundSensor() ? AVAILABLE : UNAVAILABLE);
   Serial.println();
   Serial.print(F("    Temperature/humidity:    "));
   Serial.print(probeTemperatureSensor() ? AVAILABLE : UNAVAILABLE);
   Serial.println();
   Serial.print(F("    Radiant temperature:     "));
-  Serial.print(UNCHECKABLE);
+  Serial.print(probeGlobeTemperatureSensor() ? AVAILABLE : UNAVAILABLE);
   Serial.println();
   Serial.print(F("    CO2:                     "));
   Serial.print(probeCO2Sensor() ? AVAILABLE : UNAVAILABLE);
@@ -296,6 +309,12 @@ void printSensorCheck() {
     Serial.print(UNPOWERED);
   }
   Serial.println();
+
+  // Power off PM if we powered it on in this routine
+  if (!wasPMPowered && isPMSensorPowered()) {
+    Serial.println(F("Powering down particulate matter sensor...."));
+    powerOffPMSensor();
+  }
 }
 
 
@@ -747,6 +766,70 @@ void initSoundSensor() {
   soundData.reset();
   // Warn about uncalibrated results.
   Serial.println(F("Warning: Sound level values are uncalibrated (units are arbitrary)."));
+}
+
+
+/* Tests for the presence of the sensor (microphone).
+   Note this test is slow and not 100% reliable: it is more of
+   of educated guess of whether a microphone is attached or the
+   input pin is floating! */
+bool probeSoundSensor() {
+  // Start ADC free running mode if necessary
+  bool wasFreeRunning = isADCFreeRunning();
+  if (!wasFreeRunning) {
+    startADCFreeRunning();
+  }
+
+  // Collect ADC samples
+  // Testing shows that ADC samples at ~ 10 kHz with
+  // Teensy++ 2.0 run at 8 MHz.  Loop runs at ~ 100 kHz.
+  SoundData data;
+  data.reset();
+  //uint32_t count = 0;
+  uint32_t t0 = millis();
+  while (millis() - t0 < 100) {
+    //count++;
+    int v = readAnalogFast();
+    // v = -1 if new sample not available
+    if (v >= 0) data.add(v);
+  }
+  
+  // Stop ADC free running mode if it was started here
+  if (!wasFreeRunning && isADCFreeRunning()) {
+    stopADCFreeRunning();
+  }
+  
+  // Debugging
+  //Serial.println();
+  //Serial.print(F("ADC free running sample rate: "));
+  //Serial.print(data.N / 1000.0);
+  //Serial.println(F(" kHz"));
+  //Serial.print(F("Loop rate: "));
+  //Serial.print(count / 1000.0);
+  //Serial.println(F(" kHz"));
+  
+  // Hopefully, this doesn't happen...
+  if (data.N <= 10) return false;
+  
+  // Look to see if samples are consistent with what we expect
+  // from microphone:
+  //  * Should average around Vcc/2 -> 1024/2 with external
+  //    AREF pin connected to Vcc.  Must account for any
+  //    AREF offsets, non-linearities, and sampling fluctuations.
+  //    With  1000+ measurements, sampling fluctuations should
+  //    be small compared to other issues (+/- 2/1024).
+  float ave = data.ave();
+  if ((ave < 496) || (ave > 528)) return false;
+  //  * Fluctuations should not be extremely small
+  //    (microphones tend to have a noise floor, even if
+  //    space is absolutely quiet).
+  float sd = data.sd();
+  if (sd < 2.0) return false;
+  //  * Fluctuations should not be extremely large
+  //    (unless it is very loud?).
+  if (sd > 256) return false;
+
+  return true;
 }
 
 
@@ -1489,6 +1572,14 @@ void initPMSensor() {
   //sps30.SetSerialPin(PM_PIN_RX, PM_PIN_TX);
   digitalWrite(PM_ENABLE, LOW);
   resetPMData();
+
+  // Initializes microcontroller hardware and communication classes.
+  // No interaction with SPS30, so no need to have SPS30 powered up.
+  // sps30.begin() here returns false only if there is a software
+  // misconfiguration and does not indicate if there is a hardware
+  // issue.
+  //sps30.begin(SOFTWARE_SERIAL);
+  sps30.begin(I2C_COMMS);
 }
 
 
@@ -1501,20 +1592,6 @@ void powerOnPMSensor() {
   digitalWrite(PM_ENABLE, HIGH);
   Serial.println(F("Powered on PM sensor."));
   delay(100);
-  //sps30.begin(SOFTWARE_SERIAL);
-  /*
-  if (sps30.begin(SOFTWARE_SERIAL)) {
-    Serial.println("Successfully started PM serial interface.");
-  } else {
-    Serial.println("Could not start PM serial interface.");
-  }
-  */
-  //sps30.begin(I2C_COMMS);
-  if (sps30.begin(I2C_COMMS)) {
-    Serial.println(F("Successfully started PM sensor I2C interface."));
-  } else {
-    Serial.println(F("Could not start PM sensor I2C interface."));
-  }
   pmPowered = true;
 }
 
@@ -1583,7 +1660,8 @@ bool isPMSensorRunning() {
 /* Tests communication with the particulate matter sensor. */
 bool probePMSensor() {
   if (!pmPowered) return false;
-  if (!pmRunning) return false;
+  // Not necessary to be running to interact with SPS30
+  //if (!pmRunning) return false;
   return sps30.probe();
 }
 
@@ -1714,7 +1792,7 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
   // memory usage.  We use dsostrf instead.
   char hbuffer1[128],hbuffer2[128],hbuffer3[128];
   char sbuffer[128];
-  char fbuffers[10][8];
+  char fbuffers[10][9];
 
   // Table header
   //Serial.println();
@@ -1761,6 +1839,7 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
       Serial.println(sbuffer);
       continue;
     }
+    // Ensure fbuffers is width+1 or larger
     dtostrf(pmData.MassPM1,6,2,fbuffers[0]);
     dtostrf(pmData.MassPM2,6,2,fbuffers[1]);
     dtostrf(pmData.MassPM4,6,2,fbuffers[2]);
@@ -1780,9 +1859,9 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
 
   Serial.println();
   Serial.println(F("Stopping measurements...."));
-  stopPM();
+  stopPMSensor();
   Serial.println(F("Powering down particulate matter sensor...."));
-  powerOffPM();
+  powerOffPMSensor();
   Serial.println(F("Particulate matter sensor testing is complete."));
   Serial.println();
 }
