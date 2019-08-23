@@ -162,8 +162,8 @@ int getSerialInt(bool reprompt) {
    Returns smallest integer value (LONG_MIN from <limits.h>) if
    data is empty except for newline character.  Can optionally
    reprompt for user input if data is non-empty, but invalid. */
-int getSerialLong(bool reprompt) {
-  const int EMPTY_VALUE = LONG_MIN;
+long getSerialLong(bool reprompt) {
+  const long EMPTY_VALUE = LONG_MIN;
   while (true) {
     String s = getSerialString(-1);
     s.trim();
