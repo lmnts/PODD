@@ -20,7 +20,7 @@
 //#include <SoftwareSerial.h>
 #include <Wire.h>
 #include <ClosedCube_OPT3001.h>
-#include <sps30.h>
+//#include <sps30.h>
 //#include <TimerOne.h>
 #include <TimerThree.h>
 
@@ -105,10 +105,6 @@ volatile bool soundSampling = false;
 // hardware timers (hopefully nothing else is trying to use it...).
 //SoftwareSerial CO2_serial(CO2_PIN_RX,CO2_PIN_TX);
 NeoSWSerial CO2_serial(CO2_PIN_RX, CO2_PIN_TX);
-// Note COZIR library modified to remove Serial.begin() call in
-// constructor as we do _not_ want the serial interface running
-// except when we actually want to communicate with the sensor.
-//COZIR czr(CO2_serial);
 
 // CO
 //#define numCoRead 4
@@ -148,6 +144,13 @@ NeoSWSerial CO2_serial(CO2_PIN_RX, CO2_PIN_TX);
 #define PM_PIN_TX PIN_C5
 // Power enable pin
 #define PM_ENABLE 42
+
+// We use I2C (Wire) interface to interact with SPS30.
+// Note the 32-byte buffer used by the Wire class for teensy
+// boards is insufficient to hold all the data returned by the
+// sensor: the mass densities can be retrieved, but the number
+// densities will not (set to NAN).
+
 // SPS30 I2C address
 #define SPS30_ADDR 0x69
 // SPS30 pointer addresses
@@ -160,11 +163,13 @@ NeoSWSerial CO2_serial(CO2_PIN_RX, CO2_PIN_TX);
 #define SPS30_ARTICLE_CODE   ((uint16_t)0xD025)
 #define SPS30_SERIAL_NUMBER  ((uint16_t)0xD033)
 #define SPS30_RESET          ((uint16_t)0xD304)
+
 // Keep track of current SPS30 status
 struct SPS30Status {
   bool powered = false;
   bool running = false;  // in measurement mode
 } sps30Status;
+
 // Structure to store SPS30 measurements
 struct SPS30Values {
   float MassPM1  = NAN;
@@ -183,16 +188,6 @@ struct SPS30Values {
 };
 // Global storage of most recently retrieved data
 SPS30Values sps30Values;
-
-// SPS30 object.
-// Uses default I2C (Wire) interface.  Note the 32-byte buffer
-// used by this class for teensy boards is insufficient to hold
-// all the data returned by the sensor: the mass densities can
-// be retrieved, but the number densities will not (set to zer0).
-SPS30 sps30;
-//bool pmPowered = false;
-//bool pmRunning = false;
-sps_values pmData;
 
 
 //--------------------------------------------------------------------------------------------- [Sensor Reads]
@@ -1090,8 +1085,10 @@ TempRHData temperatureData;
 void initTemperatureSensor() {
   //hih.initialise();
   temperatureData.reset();
-  // Should call Wire.begin() before using
-  //if (TWCR == 0) Wire.begin();
+  // Initialize/start I2C interface
+  // Wire changes the Two-Wire Control Register (TWCR), so can use
+  // its value to see if I2C interface already initialized.
+  if (TWCR == 0) Wire.begin();
 }
 
 
@@ -1615,15 +1612,7 @@ uint8_t calcSPS30Checksum(uint8_t data[2]) {
   }
   return crc;
 }
-//uint8_t calcSPS30Checksum(uint8_t b1, uint8_t b2) {
-//  uint8_t data[2];
-//  data[0] = b1;
-//  data[1] = b2;
-//  return calcSPS30Checksum(data);
-//}
-//uint8_t calcSPS30Checksum(uint16_t data) {
-//  return calcSPS30Checksum((uint8_t)((data >> 8) & 0xFF), (uint8_t)(data & 0xFF));
-//}
+
 
 /*  Checks the first two bytes of data against the checksum in the
     third byte. */
@@ -1636,8 +1625,6 @@ bool checkSPS30Checksum(uint8_t data[3]) {
     SPS30 returns IEEE754 big-endian float values.
     Returns NAN if the checksums do not match. */
 float extractSPS30Float(uint8_t data[6]) {
-  //if (calcSPS30Checksum(&data[0]) != data[2]) return NAN;
-  //if (calcSPS30Checksum(&data[3]) != data[5]) return NAN;
   if (!checkSPS30Checksum(&data[0])) return NAN;
   if (!checkSPS30Checksum(&data[3])) return NAN;
   union {uint8_t b[4]; float f;} u;
@@ -1656,15 +1643,15 @@ bool setSPS30Pointer(uint16_t ptr) {
   buff[1] = ptr & 0xFF;
   Wire.beginTransmission(SPS30_ADDR);
   size_t n = Wire.write(buff,BUFF_LEN);
-  Serial.print(F("setSPS30Pointer: wrote "));
-  Serial.print(n);
-  Serial.print(F(" bytes"));
-  Serial.println();
-  //if (Wire.endTransmission() != 0) return false;
-  int val = Wire.endTransmission();
-  Serial.print(F("setSPS30Pointer: endTransmission = "));
-  Serial.print(val);
-  Serial.println();
+//  Serial.print(F("setSPS30Pointer: wrote "));
+//  Serial.print(n);
+//  Serial.print(F(" bytes"));
+//  Serial.println();
+  if (Wire.endTransmission() != 0) return false;
+//  int val = Wire.endTransmission();
+//  Serial.print(F("setSPS30Pointer: endTransmission = "));
+//  Serial.print(val);
+//  Serial.println();
   // Always true within transmission for current Teensy implementation
   return (n == BUFF_LEN);
 }
@@ -1679,11 +1666,11 @@ bool writeSPS30Data(uint16_t ptr, uint8_t *data, size_t len) {
   memcpy(&buff[2],data,len);
   Wire.beginTransmission(SPS30_ADDR);
   size_t n = Wire.write(buff,BUFF_LEN);
-  //if (Wire.endTransmission() != 0) return false;
-  int val = Wire.endTransmission();
-  Serial.print(F("setSPS30Data: endTransmission = "));
-  Serial.print(val);
-  Serial.println();
+  if (Wire.endTransmission() != 0) return false;
+//  int val = Wire.endTransmission();
+//  Serial.print(F("setSPS30Data: endTransmission = "));
+//  Serial.print(val);
+//  Serial.println();
   // Always true within transmission for current Teensy implementation
   return (n == BUFF_LEN);
 }
@@ -1694,10 +1681,10 @@ bool writeSPS30Data(uint16_t ptr, uint8_t *data, size_t len) {
 size_t readSPS30Data(uint16_t ptr, uint8_t *data, size_t len) {
   if (!setSPS30Pointer(ptr)) return 0;
   size_t n = Wire.requestFrom(SPS30_ADDR,len);
-  Serial.print(F("readSPS30Data: "));
-  Serial.print(n);
-  Serial.print(F(" bytes retrieved"));
-  Serial.println();
+//  Serial.print(F("readSPS30Data: "));
+//  Serial.print(n);
+//  Serial.print(F(" bytes retrieved"));
+//  Serial.println();
   if (n == 0) return 0;
   // Pull data from I2C buffer
   size_t kmax = (n <= len) ? n : len;
@@ -1759,6 +1746,13 @@ bool stopSPS30() {
 }
 
 
+/*  Resets the SPS30.
+    Returns false if transaction failed. */
+bool resetSPS30() {
+  return setSPS30Pointer(SPS30_RESET);
+}
+
+
 /*  Starts cleaning process on the SPS30, which runs the fan at high
     speed for 10 seconds.  Per datasheet, must be in measurement mode.
     Caller is responsible for waiting for cleaning process to end.
@@ -1775,13 +1769,15 @@ bool cleanSPS30() {
 bool retrieveSPS30Data() {
   sps30Values.reset();
   // I2C buffer is 32 bytes on Teensy++ 2.0:
-  // make multiple transactions to get retrieve all 60 bytes of data
+  // make multiple transactions to retrieve all 60 bytes of data.
+  // NOTE: Cannot access SPS30 data through multiple transactions
+  //       as intended...
   const size_t BUFF_LEN = 5*6;
   uint8_t buff[BUFF_LEN];
   size_t n;
   
   n = readSPS30Data(SPS30_READ_VALUES,buff,5*6);
-  if (n != 5*6) return false;
+  if (n != 5*6) {sps30Values.reset(); return false;}
   sps30Values.MassPM1  = extractSPS30Float(&buff[0*6]);
   sps30Values.MassPM2  = extractSPS30Float(&buff[1*6]);
   sps30Values.MassPM4  = extractSPS30Float(&buff[2*6]);
@@ -1793,14 +1789,13 @@ bool retrieveSPS30Data() {
     sps30Values.reset();
     return false;
   }
-
-  n = readSPS30Data(0x0300,buff,1*6);
-  Serial.print(F("Offset read: "));
-  Serial.print(extractSPS30Float(&buff[0*6]));
-  Serial.println();
+  
+  // It appears the SPS30 does not allow advancing the pointer:
+  // this will lock up the device.  Are address pointers to
+  // instructions rather than raw memory registers containing data?
   /*
   n = readSPS30Data(SPS30_READ_VALUES+5*6,buff,5*6);
-  if (n != 5*6) return false;
+  if (n != 5*6) {sps30Values.reset(); return false;}
   sps30Values.NumPM1   = extractSPS30Float(&buff[0*6]);
   sps30Values.NumPM2   = extractSPS30Float(&buff[1*6]);
   sps30Values.NumPM4   = extractSPS30Float(&buff[2*6]);
@@ -1837,10 +1832,12 @@ void initPMSensor() {
   // misconfiguration and does not indicate if there is a hardware
   // issue.
   //sps30.begin(SOFTWARE_SERIAL);
-  sps30.begin(I2C_COMMS);
+  //sps30.begin(I2C_COMMS);
   
-  // Should call Wire.begin() before using
-  //if (TWCR == 0) Wire.begin();
+  // Initialize/start I2C interface
+  // Wire changes the Two-Wire Control Register (TWCR), so can use
+  // its value to see if I2C interface already initialized.
+  if (TWCR == 0) Wire.begin();
 }
 
 
@@ -1890,8 +1887,8 @@ bool isPMSensorPowered() {
 void startPMSensor(bool wait) {
   if (sps30Status.running) return;
   if (!sps30Status.powered) powerOnPMSensor();
-  //if (!sps30.start()) return;
-  if (sps30.start()) {
+  //if (!startSPS30()) return;
+  if (startSPS30()) {
     Serial.println(F("Successfully started PM sensor."));
   } else {
     Serial.println(F("Could not start PM sensor."));
@@ -1906,7 +1903,7 @@ void startPMSensor(bool wait) {
    Reduces power usage from ~ 60 mA to < 8 mA. */
 void stopPMSensor() {
   if (!sps30Status.running) return;
-  sps30.stop();
+  stopSPS30();
   Serial.println(F("Stopped PM sensor."));
   sps30Status.running = false;
 }
@@ -1923,7 +1920,7 @@ bool probePMSensor() {
   if (!sps30Status.powered) return false;
   // Not necessary to be running to interact with SPS30
   //if (!sps30Status.running) return false;
-  return sps30.probe();
+  return probeSPS30();
 }
 
 
@@ -1936,7 +1933,7 @@ bool probePMSensor() {
 bool cleanPMSensor(bool wait) {
   if (!sps30Status.powered) return false;
   if (!sps30Status.running) return false;
-  if (!sps30.clean()) return false;
+  if (!cleanSPS30()) return false;
   Serial.println(F("Cleaning PM sensor.... (takes 12 seconds)"));
   if (wait) delay(12000);  // Need 10s, or 10s + spinup/down?
   return true;
@@ -1945,32 +1942,24 @@ bool cleanPMSensor(bool wait) {
 
 /*  Sets the particulate matter sensor data to invalid values. */
 void resetPMData() {
-  pmData.MassPM1  = -1;
-  pmData.MassPM2  = -1;
-  pmData.MassPM4  = -1;
-  pmData.MassPM10 = -1;
-  pmData.NumPM0   = -1;
-  pmData.NumPM1   = -1;
-  pmData.NumPM2   = -1;
-  pmData.NumPM4   = -1;
-  pmData.NumPM10  = -1;
-  pmData.PartSize = -1;
+  sps30Values.reset();
 }
 
 
 /* Retrieves measurements from the particulate matter sensor.
    Returns true on success.  Actual data values can be accessed
    through below routines.  Sensor must be powered on and
-   running; new data is only available every 1 second
-   (retrieval will fail if attempting to too soon after last
-   retrieval). */
+   running.  Does not wait for new measurements: may retrieve
+   previously retrieved data if called multiple times over a
+   short period (new measurements taken ~ 1/sec). */
 bool retrievePMData() {
   if (!sps30Status.powered) return false;
   if (!sps30Status.running) return false;
-  if (sps30.GetValues(&pmData) != ERR_OK) {
+  if (!retrieveSPS30Data()) {
     resetPMData();
     return false;
   }
+  // fields not retrievable due to buffer size are set to NAN
   return true;
 }
 
@@ -1981,7 +1970,7 @@ bool retrievePMData() {
    or smaller.  Sensor's particle size threshold is ~ 0.3 um.
    Returns -1 if measurement failed/invalid. */
 float getPM2_5() {
-  return pmData.MassPM2;
+  return sps30Values.MassPM2;
 }
 
 
@@ -1991,7 +1980,7 @@ float getPM2_5() {
    or smaller.  Sensor's particle size threshold is ~ 0.3 um.
    Returns -1 if measurement failed/invalid. */
 float getPM10() {
-  return pmData.MassPM10;
+  return sps30Values.MassPM10;
 }
 
 
@@ -2029,8 +2018,6 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
   Serial.print(F("s)"));
   printPMPauseProgress(offTime/1000,1000);
   Serial.println();
-  Serial.println(F("  ProbePM:    ") + String(probePMSensor()));
-  Serial.println(F("  ProbeSPS30: ") + String(probeSPS30()));
   Serial.println(F("Powering up particulate matter sensor...."));
   powerOnPMSensor();
   Serial.print(F("Waiting in idle mode ("));
@@ -2038,8 +2025,6 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
   Serial.print(F("s)"));
   printPMPauseProgress(idleTime/1000,1000);
   Serial.println();
-  Serial.println(F("  ProbePM:    ") + String(probePMSensor()));
-  Serial.println(F("  ProbeSPS30: ") + String(probeSPS30()));
   
   // Debugging
   /*
@@ -2052,6 +2037,10 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
   Serial.println(F("Starting measurements...."));
   startPMSensor(false);
   unsigned long t0 = millis();
+  
+  Serial.println();
+  Serial.println(F("Note: I2C buffer limitations prevent retrieval of some PM data."));
+  Serial.println();
   
   // Arduino implementation of printf drops %f support to reduce
   // memory usage.  We use dsostrf instead.
@@ -2092,7 +2081,6 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
     }
 
     unsigned long t = millis() - t0;
-    /*
     if (!probePMSensor()) {
       sprintf(sbuffer,"%10ld  %73s",
               t,"                       <failed to probe PM sensor>                       ");
@@ -2100,36 +2088,6 @@ void testPMSensor(unsigned long cycles, unsigned long sampleInterval,
       continue;
     }
     if (!retrievePMData()) {
-      sprintf(sbuffer,"%10ld  %73s",
-              t,"                    <failed to retrieve sensor data>                     ");
-      Serial.println(sbuffer);
-      continue;
-    }
-    // Ensure fbuffers is width+1 or larger
-    dtostrf(pmData.MassPM1,6,2,fbuffers[0]);
-    dtostrf(pmData.MassPM2,6,2,fbuffers[1]);
-    dtostrf(pmData.MassPM4,6,2,fbuffers[2]);
-    dtostrf(pmData.MassPM10,6,2,fbuffers[3]);
-    dtostrf(pmData.NumPM0,6,2,fbuffers[4]);
-    dtostrf(pmData.NumPM1,6,2,fbuffers[5]);
-    dtostrf(pmData.NumPM2,6,2,fbuffers[6]);
-    dtostrf(pmData.NumPM4,6,2,fbuffers[7]);
-    dtostrf(pmData.NumPM10,6,2,fbuffers[8]);
-    dtostrf(pmData.PartSize,8,2,fbuffers[9]);
-    sprintf(sbuffer,"%10ld  %6s %6s %6s %6s  %6s %6s %6s %6s %6s  %8s",
-            t,fbuffers[0],fbuffers[1],fbuffers[2],fbuffers[3],
-            fbuffers[4],fbuffers[5],fbuffers[6],fbuffers[7],fbuffers[8],
-            fbuffers[9]);
-    Serial.println(sbuffer);
-    */
-    
-    if (!probeSPS30()) {
-      sprintf(sbuffer,"%10ld  %73s",
-              t,"                       <failed to probe PM sensor>                       ");
-      Serial.println(sbuffer);
-      continue;
-    }
-    if (!retrieveSPS30Data()) {
       sprintf(sbuffer,"%10ld  %73s",
               t,"                    <failed to retrieve sensor data>                     ");
       Serial.println(sbuffer);

@@ -75,7 +75,7 @@ void setup() {
   // Temperature/humidity sensor testing
   testTemperatureSensor(-1,1000);
   // Particulate matter sensor testing
-  testPMSensor(-1,5000,10000,10000);
+  testPMSensor(-1,1000,5000,5000);
   #endif
   
   Serial.println(LINE);
