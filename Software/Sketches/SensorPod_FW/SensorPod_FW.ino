@@ -147,7 +147,7 @@ void setup() {
   // currently connected.
   if (getModeCoord()) {
     if (!ethernetConnected()) {
-      Serial.print(F("Re-attempting to connect to the network.... ("));
+      Serial.println(F("Re-attempting to connect to the network...."));
       ethernetBegin(3);
     }
     //ethernetMaintain();
