@@ -10,11 +10,13 @@
 */
 
 #include "pod_network.h"
+#include "pod_eeprom.h"
 #include "pod_config.h"
 #include "pod_logging.h"
 #include "pod_util.h"
 #include "pod_clock.h"
 
+#include <EEPROM.h>
 #include <SPI.h>
 #include <TimerOne.h>
 #include <Ethernet.h>
@@ -111,6 +113,22 @@ uint8_t xbeeGroup = 0;
 String set1;
 String set2;
 
+// Network configuration.
+// Contains a version number used for EEPROM storage checking,
+// a flag indicating network connection type (static vs dynamic),
+// a static IP address, and a DNS server IP address.
+#define NETWORK_CONFIG_VERSION 10000
+struct NetworkConfig {
+  uint16_t version;
+  uint8_t flags;  // Bit 1: whether static (1) or dynamic (0) IP address used
+  // Static configuration quantities (not used with DHCP)
+  uint32_t staticIP;
+  uint32_t gatewayIP;
+  uint32_t subnet;
+  uint32_t dnsIP;
+};
+NetworkConfig networkConfig {NETWORK_CONFIG_VERSION,0x00,0,0,0,0x08080808};
+
 // Ethernet connection settings
 #define WIZ812MJ_ES_PIN 20 // WIZnet SPI chip-select pin
 #define WIZ812MJ_RESET_PIN 9 // WIZnet reset pin
@@ -120,8 +138,19 @@ const char SERVER_PAGE_NAME[] = "/LMNSensePod.php"; // Name of submission page. 
 #define SERVER_PORT 80
 #define LOCAL_PORT 8888
 
-// Maximum amount of time to allow ethernet to obtain connection.
-#define ETHERNET_START_TIMEOUT 5000
+// Maximum amount of time to allow ethernet to obtain connection via
+// DHCP as well as maximum amount of time to wait for each response in
+// the DHCP process (multiple messages are exchanged during DHCP process).
+// Some locations may have slower DHCP interaction and bumping up
+// timeouts may be necessary to reliably obtain network connections.
+// However, network initialization process prevents other tasks (like
+// sensor readings or XBee messaging) from being performed, so these
+// timeouts should not be too large.
+#define ETHERNET_DHCP_TIMEOUT 5000
+#define ETHERNET_DHCP_RESPONSE_TIMEOUT 4000
+// Longer timeouts
+//#define ETHERNET_DHCP_TIMEOUT 30000
+//#define ETHERNET_DHCP_RESPONSE_TIMEOUT 10000
 
 // Number of packets uploaded to server (successfully or unsuccessfully)
 unsigned long packetsUploaded = 0;
@@ -1060,6 +1089,77 @@ void processDestinationPacket(const String packet) {
 
 //--------------------------------------------------------------------------------------------- [Upload Support]
 
+/* Loads network configuration information from EEPROM if available, 
+   otherwise sets default values. */
+void loadNetworkConfig() {
+  // Check config version
+  uint16_t version = (((uint16_t)EEPROM.read(EEPROM_NETWORK_ADDR + 0)) << 0)
+                     + (((uint16_t)EEPROM.read(EEPROM_NETWORK_ADDR + 1)) << 8);
+
+  // Load data if valid
+  if (version == NETWORK_CONFIG_VERSION) {
+    for (size_t k = 0; k < sizeof(networkConfig); k++) {
+      *((char*)&networkConfig + k) = EEPROM.read(EEPROM_NETWORK_ADDR + k);
+    }
+  } else {
+    networkConfig.version = NETWORK_CONFIG_VERSION;
+    networkConfig.flags = 0x00;
+    networkConfig.staticIP = 0;
+    networkConfig.dnsIP = 0x08080808;  // Google DNS: 8.8.8.8
+    networkConfig.gatewayIP = 0;
+    networkConfig.subnet = 0;
+    //saveNetworkConfig();
+  }
+}
+
+
+/* Saves network configuration information to EEPROM. */
+void saveNetworkConfig() {
+  for (size_t k = 0; k < sizeof(networkConfig); k++) {
+    // Put only writes byte if different from current EEPROM value
+    // (reduces EEPROM wear).  If configuration hasn't changed,
+    // this will not actually write anything.
+    EEPROM.put(EEPROM_NETWORK_ADDR + k, *((char*)&networkConfig + k));
+  }
+}
+
+
+void setNetworkFlags(uint8_t flags) {
+  networkConfig.flags = flags;
+}
+uint8_t getNetworkFlags() {
+  return networkConfig.flags;
+}
+
+void setNetworkStaticIP(uint32_t ip) {
+  networkConfig.staticIP = ip;
+}
+uint32_t getNetworkStaticIP() {
+  return networkConfig.staticIP;
+}
+
+void setNetworkGatewayIP(uint32_t ip) {
+  networkConfig.gatewayIP = ip;
+}
+uint32_t getNetworkGatewayIP() {
+  return networkConfig.gatewayIP;
+}
+
+void setNetworkSubnetMask(uint32_t ip) {
+  networkConfig.subnet = ip;
+}
+uint32_t getNetworkSubnetMask() {
+  return networkConfig.subnet;
+}
+
+void setNetworkDNSServerIP(uint32_t ip) {
+  networkConfig.dnsIP = ip;
+}
+uint32_t getNetworkDNSServerIP() {
+  return networkConfig.dnsIP;
+}
+
+
 /* Sets the ethernet MAC address using the XBee serial number. */
 void initMACAddress() {
   // Use XBee's serial number for ethernet MAC address
@@ -1104,6 +1204,9 @@ void ethernetSetup() {
   #if HTTP_POST_TIMEOUT >= 1000
   Serial.println(F("******** DEBUG: Long HTTP post timeout in use ********"));
   #endif
+
+  // Get network configuration settings fron EEPROM
+  loadNetworkConfig();
   
   // Provide power to the ethernet board
   pinMode(ETHERNET_EN, OUTPUT);
@@ -1203,13 +1306,44 @@ bool ethernetBegin(int attempts) {
     // Link status (not supported by W5100)
     //Serial.print(F("Ethernet link status: "));
     //Serial.println(Ethernet.linkStatus());
+
+    // Static IP address
+    // There is no checking of valid network connection in this
+    // case, so we just return true.
+    // If any addresses/masks are zero, we set IP-dependent
+    // default values.
+    if ((networkConfig.flags & 0x01) != 0) {
+      IPAddress ip = IPAddress(networkConfig.staticIP);
+      IPAddress dns = IPAddress(networkConfig.dnsIP);
+      if (networkConfig.dnsIP == 0) {
+        dns = ip;
+        dns[3] = 1;
+        //dns = IPAddress(8,8,8,8);  // Google DNS
+      }
+      IPAddress gateway = IPAddress(networkConfig.gatewayIP);
+      if (networkConfig.gatewayIP == 0) {
+        gateway = ip;
+        gateway[3] = 1;
+      }
+      IPAddress subnet = IPAddress(networkConfig.subnet);
+      if (networkConfig.subnet == 0) {
+        subnet = IPAddress(255,255,255,0);
+      }
+      Ethernet.begin(ethMACAddress,ip,dns,gateway,subnet);
+      ethStatus.restarted(true);
+      Serial.print(F("Ethernet initialized with static IP address. IP: "));
+      Serial.println(Ethernet.localIP());
+      return true;
+    }
+
+    // Everything below is for dynamic IP address
     
-    // For whatever reason, this seems to fail 20-30% of the time,
+    // For whatever reason, DHCP seems to fail 20-30% of the time,
     // at least when testing on LMN network.  Firmware should be
     // capable of calling this routine again if begin() fails, perhaps
     // after some interval of time to avoid getting stuck in a
     // reinitialization loop (if the network is actually inaccessible).
-    if (!Ethernet.begin(ethMACAddress,ETHERNET_START_TIMEOUT)) {
+    if (!Ethernet.begin(ethMACAddress,ETHERNET_DHCP_TIMEOUT,ETHERNET_DHCP_RESPONSE_TIMEOUT)) {
       ethStatus.restarted(false);
       if (k < attempts) {
         Serial.println(F("Ethernet initialization failed.  Retrying..."));
@@ -1223,6 +1357,7 @@ bool ethernetBegin(int attempts) {
       return true;
     }
   }
+  
   return false;
 }
 
@@ -1252,6 +1387,9 @@ void ethernetMaintain() {
     ethernetBegin(1);
     return;
   }
+
+  // No DHCP maintenance if have static IP address
+  if ((networkConfig.flags & 0x01) != 0) return;
 
   // Routine will perform occasional network connection
   // maintenance, like renewing DHCP lease when necessary.

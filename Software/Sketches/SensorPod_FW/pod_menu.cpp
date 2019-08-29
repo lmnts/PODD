@@ -295,6 +295,19 @@ void showMenuNetworkSettings() {
   Serial.print((FType)MENU_INDENT2);
   Serial.print(F("IP address:  "));
   Serial.print(Ethernet.localIP());
+  if ((getNetworkFlags() & 0x01) != 0) {
+    Serial.print(F("  [static]"));
+  } else {
+    Serial.print(F("  [DHCP]"));
+  }
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Gateway:     "));
+  Serial.print(Ethernet.gatewayIP());
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Subnet:      "));
+  Serial.print(Ethernet.subnetMask());
   Serial.println();
   Serial.print((FType)MENU_INDENT2);
   Serial.print(F("DNS server:  "));
@@ -461,6 +474,7 @@ void configureSensorTimingSettings() {
 /* Prompt the user to update network settings over the serial interface. */
 void configureNetworkSettings() {
   bool b;
+  bool usingStaticIP = (getNetworkFlags() & 0x01) != 0;
 
   Serial.println(F("Current ethernet status:"));
   Serial.print(F("  Connected:   "));
@@ -471,11 +485,117 @@ void configureNetworkSettings() {
   Serial.println();
   Serial.print(F("  IP address:  "));
   Serial.print(Ethernet.localIP());
+  if (usingStaticIP) {
+    Serial.print(F("  [static]"));
+  } else {
+    Serial.print(F("  [DHCP]"));
+  }
   Serial.println();
   Serial.print(F("  DNS server:  "));
   Serial.print(Ethernet.dnsServerIP());
   Serial.println();
   Serial.println();
+  
+  Serial.println(F("The IP address can be set to a fixed (static) value or assigned"));
+  Serial.println(F("automatically using DHCP.  This PODD is currently set to use"));
+  if (usingStaticIP) {
+    Serial.println(F("a static IP address."));
+    Serial.println();
+    b = serialYesNoPrompt(F("Switch to DHCP (y/n)?"),true,false);
+    if (b) {
+      usingStaticIP = false;
+      setNetworkFlags(getNetworkFlags() & 0xFE);
+    }
+  } else {
+    Serial.println(F("DHCP."));
+    Serial.println();
+    b = serialYesNoPrompt(F("Switch to a static IP address (y/n)?"),true,false);
+    if (b) {
+      usingStaticIP = true;
+      setNetworkFlags((getNetworkFlags() & 0xFE) | 0x01);
+    }
+  }
+  Serial.println();
+
+  if (usingStaticIP) {
+    IPAddress ip;
+    String ipstr;
+    String s;
+
+    // Static IP address
+    ip = IPAddress(getNetworkStaticIP());
+    //ipstr = ip.toString();
+    ipstr = String() + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
+    s = serialStringPrompt(F("Static IP address"),ipstr);
+    if (!s.equals(ipstr)) {
+      IPAddress newip;
+      if (newip.fromString(s)) {
+        setNetworkStaticIP((uint32_t)newip);
+        Serial.print(F("Static IP address changed to "));
+        Serial.print(IPAddress(getNetworkStaticIP()));
+        Serial.println();
+      } else {
+        Serial.println(F("Invalid IP address.  Static IP address will not be changed."));
+      }
+    }
+    
+    // Gateway IP address
+    ip = IPAddress(getNetworkGatewayIP());
+    //ipstr = ip.toString();
+    ipstr = String() + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
+    s = serialStringPrompt(F("Gateway IP address"),ipstr);
+    if (!s.equals(ipstr)) {
+      IPAddress newip;
+      if (newip.fromString(s)) {
+        setNetworkGatewayIP((uint32_t)newip);
+        Serial.print(F("Gateway IP address changed to "));
+        Serial.print(IPAddress(getNetworkGatewayIP()));
+        Serial.println();
+      } else {
+        Serial.println(F("Invalid IP address.  Gateway IP address will not be changed."));
+      }
+    }
+    
+    // Subnet mask
+    ip = IPAddress(getNetworkSubnetMask());
+    //ipstr = ip.toString();
+    ipstr = String() + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
+    s = serialStringPrompt(F("Subnet mask"),ipstr);
+    if (!s.equals(ipstr)) {
+      IPAddress newip;
+      if (newip.fromString(s)) {
+        setNetworkSubnetMask((uint32_t)newip);
+        Serial.print(F("Subnet mask changed to "));
+        Serial.print(IPAddress(getNetworkSubnetMask()));
+        Serial.println();
+      } else {
+        Serial.println(F("Invalid subnet mask.  Subnet mask will not be changed."));
+      }
+    }
+    
+    // DNS server IP address
+    ip = IPAddress(getNetworkDNSServerIP());
+    //ipstr = ip.toString();
+    ipstr = String() + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
+    s = serialStringPrompt(F("DNS server IP address"),ipstr);
+    if (!s.equals(ipstr)) {
+      IPAddress newip;
+      if (newip.fromString(s)) {
+        setNetworkDNSServerIP((uint32_t)newip);
+        Serial.print(F("DNS server IP address changed to "));
+        Serial.print(IPAddress(getNetworkDNSServerIP()));
+        Serial.println();
+      } else {
+        Serial.println(F("Invalid IP address.  DNS server IP address will not be changed."));
+      }
+    }
+    
+    Serial.println();
+  }
+  
+  // Save network configuration to EEPROM (no actual writes if settings
+  // did not change).
+  saveNetworkConfig();
   
   b = serialYesNoPrompt(F("(Re)initialize ethernet connection (y/n)?"),true,false);
   if (b) {

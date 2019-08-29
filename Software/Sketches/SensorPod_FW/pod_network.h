@@ -57,6 +57,19 @@ void processDestinationPacket(const String packet);
 
 #define ETHERNET_EN 43
 
+void loadNetworkConfig();
+void saveNetworkConfig();
+void setNetworkFlags(uint8_t flags);
+uint8_t getNetworkFlags();
+void setNetworkStaticIP(uint32_t ip);
+uint32_t getNetworkStaticIP();
+void setNetworkGatewayIP(uint32_t ip);
+uint32_t getNetworkGatewayIP();
+void setNetworkSubnetMask(uint32_t ip);
+uint32_t getNetworkSubnetMask();
+void setNetworkDNSServerIP(uint32_t ip);
+uint32_t getNetworkDNSServerIP();
+
 void initMACAddress();
 String getMACAddressString();
 

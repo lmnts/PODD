@@ -56,6 +56,9 @@
 // Location of clock data [0x0400 - 0x0479].
 // Currently contains timezone information.
 #define EEPROM_CLOCK_ADDR 0x0400
+// Location of network configuration data [0x0500 - 0x0579].
+// Currently contains timezone information.
+#define EEPROM_NETWORK_ADDR 0x0500
 
 
 // Functions ===================================================================
