@@ -95,6 +95,8 @@ volatile bool soundSampling = false;
 // (reverse of Rx/Tx label on CO2 sensor)
 #define CO2_PIN_RX PIN_B6
 #define CO2_PIN_TX PIN_B5
+// Flag to indicate if CO2 sensor is present.
+bool CO2_present = false;
 // WARNING: Software serial implementations can interfere with
 // other serial interfaces as processing routines prevent
 // necessary interrupts from occurring in a timely manner.
@@ -1318,6 +1320,11 @@ float getGlobeTemperature() {
 // Good reference for Arduino serial interface with CozIR CO2 sensor:
 //   https://github.com/roder/cozir
 
+// TODO: Add optional second numeric value to send command routines.
+//       This will allow auto-calibration to be configured and for
+//       calibration to be set using a known actual CO2 concentration
+//       and a known reading (rather than current reading).
+
 
 /* Initializes the CO2 sensor. */
 void initCO2Sensor() {
@@ -1325,14 +1332,23 @@ void initCO2Sensor() {
   CO2_serial.begin(9600);
   // Only enable serial interface while using it
   enableCO2Serial();
+  // Disable auto-calibration.  Operating mode must be in command mode.
+  // The auto-calibration mode is disabled as the same effect can be
+  // done in a post-processing step without loss of information.
+  // Auto-calibration only occurs after one week of continuous power
+  // and auto-calibration settings are lost once power is reset, so
+  // it should not be relied on to maintain accuracy for PODD deployments
+  // that are only a few weeks long or less.
+  cozirSendCommand('K',0);
+  cozirSendCommand('@',0);
+  // Set digital filter to 32: measurements are moving average of
+  // previous NN measurements, which are taken at 2 Hz.
+  cozirSendCommand('A',32);
   // Set operating mode to polling
   cozirSendCommand('K',2);
   //czr.SetOperatingMode(CZR_POLLING);
   // Sensor needs ~ 8 - 10 ms before responding to further interaction.
   delay(12);
-  // Set digital filter to 32: measurements are moving average of
-  // previous NN measurements, which are taken at 2 Hz.
-  cozirSendCommand('A',32);
   disableCO2Serial();
 }
 
@@ -1347,7 +1363,14 @@ bool probeCO2Sensor() {
   // Only enable serial interface while using it
   enableCO2Serial();
   bool b = cozirSendCommand('a');  // arbitrary info command
+  // Serial occassionally glitches; try again to improve
+  // reliability of this routine.
+  if (!b) {
+    delay(10);
+    b = cozirSendCommand('a');
+  }
   disableCO2Serial();
+  CO2_present = b;
   return b;
 }
 
@@ -1363,7 +1386,28 @@ int getCO2() {
   enableCO2Serial();
   //int v = czr.CO2();
   int v = cozirGetValue('Z');
+  // If invalid value and we know sensor is present, try again
+  // as it may have been due to a serial glitch.  Avoid being
+  // this aggressive if sensor is not present as this eats up
+  // time (more so than if sensor is present due to timeout).
+  // We include one or two digit measurements as "invalid" as
+  // they have appeared in the data in rare cases, often
+  // associated with particular sensors and particular time
+  // ranges (not pervasive), and were clearly inconsistent with
+  // preceding and following measurements.  Possibly due to
+  // a serial glitch that drops one or two of the characters?
+  if ((v < 100) && CO2_present) {
+    delay(5);
+    v = cozirGetValue('Z');
+    // One more time...
+    if (v < 100) {
+      delay(5);
+      v = cozirGetValue('Z');
+    }
+  }
   disableCO2Serial();
+  // Keep flag updated.
+  CO2_present = (v >= 0);
   return v;
 }
 
@@ -1401,40 +1445,52 @@ void disableCO2Serial() {
 }
 
 
-/* Converts single character command and, optionally, an integer value
-   to a valid CozIR CO2 sensor command string.  If integer is negative,
-   it will be omitted. */
-String cozirCommandString(char c, int v) {
+/* Converts single character command and, optionally, up to two integer 
+   values to a valid CozIR CO2 sensor command string.  If integer is
+   negative, it and following values will be omitted. */
+String cozirCommandString(char c, int v, int v2) {
+  // No values
   if (v < 0) {
     return String(c);
   }
-  char buff[10];
+  // One value
+  if (v2 < 0) {
+    char buff[10];
+    // Require non-negative integers of limited range
+    uint16_t v0 = (uint16_t)(v > 65535 ? 65535 : v);
+    sprintf(buff,"%c %u",c,v0);
+    return String(buff);
+  }
+  // Two values
+  char buff[16];
   // Require non-negative integers of limited range
   uint16_t v0 = (uint16_t)(v > 65535 ? 65535 : v);
-  sprintf(buff,"%c %u",c,v0);
+  uint16_t v20 = (uint16_t)(v2 > 65535 ? 65535 : v2);
+  sprintf(buff,"%c %u %u",c,v0,v20);
   return String(buff);
 }
 
 
-/* Sends single character command and, optionally, an integer value to 
-   the CozIR CO2 sensor over the serial interface.  If integer is
-   negative, it will be omitted.  Returns true if communication was
-   successful (sensor returned command character).  Note the serial
-   buffer will be left with whatever the sensor sends after the
-   command character. */
-bool cozirSendCommand(char c, int v) {
+/* Sends single character command and, optionally, up to two 
+   integer  values to the CozIR CO2 sensor over the serial
+   interface.  If integer is negative, it and following values
+   will be omitted.  Returns true if communication was successful
+   (sensor returned command character).  Note the serial buffer
+   will be left with whatever the sensor sends after the command
+   character. */
+bool cozirSendCommand(char c, int v, int v2) {
   //cozirSendCommand(cozirCommandString(c,v));
   // Clear incoming serial buffer first
   while(CO2_serial.available()) CO2_serial.read();
   // Send command
-  String s = cozirCommandString(c,v);
+  String s = cozirCommandString(c,v,v2);
   CO2_serial.print(s);
   CO2_serial.print("\r\n");
   // Wait a limited time for response
   //const int TIMEOUT_MS = 20;
   const int TIMEOUT_MS = 15;
   for (int k = 0; k < TIMEOUT_MS; k++) {
-    if (CO2_serial.available()) {
+    while (CO2_serial.available()) {
       // First non-space character should be same as command
       // character sent.
       char c0 = CO2_serial.read();

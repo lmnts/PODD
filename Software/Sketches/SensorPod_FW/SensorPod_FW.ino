@@ -142,7 +142,10 @@ void setup() {
   Serial.println(getXBeeDestinationString());
   Serial.print(F("  PODD group:    "));
   Serial.println(getXBeeGroup());
-
+  if (getModeCoord()) {
+    broadcastCoordinatorAddress();
+  }
+  
   // Try again to connect coordinator to network, if not
   // currently connected.
   if (getModeCoord()) {
