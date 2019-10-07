@@ -162,8 +162,8 @@ int getSerialInt(bool reprompt) {
    Returns smallest integer value (LONG_MIN from <limits.h>) if
    data is empty except for newline character.  Can optionally
    reprompt for user input if data is non-empty, but invalid. */
-int getSerialLong(bool reprompt) {
-  const int EMPTY_VALUE = LONG_MIN;
+long getSerialLong(bool reprompt) {
+  const long EMPTY_VALUE = LONG_MIN;
   while (true) {
     String s = getSerialString(-1);
     s.trim();
@@ -248,10 +248,13 @@ char serialCharPrompt(String prompt, char default0) {
   Serial.print(F(": "));
   // Get user's response
   char c = getSerialChar(-1);
+  // Empty response: use default
+  if ((c == '\r') || (c == '\n')) {
+    Serial.println();
+    return default0;
+  }
   //Serial.println();
   Serial.println(c);  // Serial Monitor does not echo inputs
-  // Empty response: use default
-  if ((c == '\r') || (c == '\n')) return default0;
   return c;
 }
 
@@ -316,7 +319,11 @@ bool serialBooleanPrompt(String prompt, bool reprompt, bool default0, char tchar
     // Get user's response
     char c = getSerialChar(-1);
     //Serial.println();
-    Serial.println(c);  // Serial Monitor does not echo inputs
+    if ((c == '\r') || (c == '\n')) {
+      Serial.println();
+    } else {
+      Serial.println(c);  // Serial Monitor does not echo inputs
+    }
     // Process response
     switch (tolower(c)) {
       // true/yes

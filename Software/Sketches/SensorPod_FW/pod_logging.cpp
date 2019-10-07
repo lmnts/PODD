@@ -397,6 +397,13 @@ void particleLog() {
   if (retrievePMData()) {
     double c2_5 = getPM2_5();
     double c10 = getPM10();
+    if (isnan(c2_5) || (c2_5 < 0) || isnan(c10) || (c10 < 0)) {
+      Serial.println(F("Failed to retrieve particle meter data."));
+      if(getRatePM() > 120) {
+        powerOffPMSensor();
+      }
+      return;
+    }
     
     Serial.print(F("PM_2.5: "));
     Serial.print(c2_5);

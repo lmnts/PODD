@@ -10,11 +10,13 @@
 */
 
 #include "pod_network.h"
+#include "pod_eeprom.h"
 #include "pod_config.h"
 #include "pod_logging.h"
 #include "pod_util.h"
 #include "pod_clock.h"
 
+#include <EEPROM.h>
 #include <SPI.h>
 #include <TimerOne.h>
 #include <Ethernet.h>
@@ -64,16 +66,68 @@ volatile bool xbeeBufferHold = false;
 // read ISR run time must be shorter than that so it does not interfere
 // with the Serial1 ISR timing.
 
+// MOVED XBEE VALUES TO STRUCTURE BELOW.
 // The XBee's serial number.  To be extracted from XBee.
-uint64_t xbeeSerialNumber = 0;
+//uint64_t xbeeSerialNumber = 0;
 // If not a coordinator, the destination is the serial number of the
 // coordinator.  Initially extracted from XBee, but will be updated from
 // network broadcast by coordinator.  Cached here instead of rereading
 // from XBee due to ~ 2 second command mode period for each read.
-uint64_t xbeeDestination = 0;
+//uint64_t xbeeDestination = 0;
+
+// Structure to store various XBee configuration settings.
+// Useful to retrieve/set in bulk as each switch into command mode
+// takes 2+ seconds.
+struct XBeeConfigStruct {
+  // NI: node identifier.
+  String identifier = "";
+  // CE: messaging mode.
+  // Should be 0 for router/drone, 1 for coordinator.
+  uint8_t coordinator = 0;
+  // SH+SL: XBee serial number
+  uint64_t serialNumber = 0;
+  // DH+DL: messaging destination.
+  // If this PODD is not a coordinator, the destination is the
+  // serial number of the coordinator.  Initially extracted from
+  // XBee, but will be updated from network broadcast by coordinator.
+  uint64_t destination = 0;
+  // HP: preamble ID (0-7).
+  // XBee's with different preambles are essentially on different
+  // networks; this can be used to create distinct PODD network
+  // groups.  Best to avoid 0 as that is the out-of-box default
+  // (most likely to have interference with any non-PODD XBees
+  // in the area).
+  uint8_t preamble = -1;
+  // ID: network ID (0x0000 - 0x7FFF)
+  uint32_t network = -1;
+} xbeeConfig;
+
+// Network group number (1-7).
+// Used to create different PODD networks: each active group
+// should have one (and only one) coordinator unit.  PODDs
+// with different group numbers do not communicate with each
+// other.
+// Corresponds to XBee preamble ID.
+uint8_t xbeeGroup = 0;
 
 String set1;
 String set2;
+
+// Network configuration.
+// Contains a version number used for EEPROM storage checking,
+// a flag indicating network connection type (static vs dynamic),
+// a static IP address, and a DNS server IP address.
+#define NETWORK_CONFIG_VERSION 10000
+struct NetworkConfig {
+  uint16_t version;
+  uint8_t flags;  // Bit 1: whether static (1) or dynamic (0) IP address used
+  // Static configuration quantities (not used with DHCP)
+  uint32_t staticIP;
+  uint32_t gatewayIP;
+  uint32_t subnet;
+  uint32_t dnsIP;
+};
+NetworkConfig networkConfig {NETWORK_CONFIG_VERSION,0x00,0,0,0,0x08080808};
 
 // Ethernet connection settings
 #define WIZ812MJ_ES_PIN 20 // WIZnet SPI chip-select pin
@@ -84,8 +138,19 @@ const char SERVER_PAGE_NAME[] = "/LMNSensePod.php"; // Name of submission page. 
 #define SERVER_PORT 80
 #define LOCAL_PORT 8888
 
-// Maximum amount of time to allow ethernet to obtain connection.
-#define ETHERNET_START_TIMEOUT 5000
+// Maximum amount of time to allow ethernet to obtain connection via
+// DHCP as well as maximum amount of time to wait for each response in
+// the DHCP process (multiple messages are exchanged during DHCP process).
+// Some locations may have slower DHCP interaction and bumping up
+// timeouts may be necessary to reliably obtain network connections.
+// However, network initialization process prevents other tasks (like
+// sensor readings or XBee messaging) from being performed, so these
+// timeouts should not be too large.
+#define ETHERNET_DHCP_TIMEOUT 5000
+#define ETHERNET_DHCP_RESPONSE_TIMEOUT 4000
+// Longer timeouts
+//#define ETHERNET_DHCP_TIMEOUT 30000
+//#define ETHERNET_DHCP_RESPONSE_TIMEOUT 10000
 
 // Number of packets uploaded to server (successfully or unsuccessfully)
 unsigned long packetsUploaded = 0;
@@ -367,8 +432,16 @@ String uint64ToHexString(uint64_t v) {
   //return s;
 }
 
-String getXBeeSerialNumberString() {return uint64ToHexString(xbeeSerialNumber);}
-String getXBeeDestinationString() {return uint64ToHexString(xbeeDestination);}
+String getXBeeSerialNumberString() {return uint64ToHexString(xbeeConfig.serialNumber);}
+String getXBeeDestinationString() {return uint64ToHexString(xbeeConfig.destination);}
+
+uint8_t getXBeeGroup() {
+  return xbeeGroup;
+}
+
+void setXBeeGroup(uint8_t group) {
+  if ((group >= 1) && (group <= 7)) xbeeGroup = group;
+}
 
 
 
@@ -391,11 +464,22 @@ void initXBee() {
   xbeeBufferHold = true;
   resetXBeeBuffer();
 
-  // Get XBee serial number and current destination.
+  // Get various XBee configuration settings.
+  // Not all these are currently being used in the firmware, but
+  // these settings might be useful at some point.
   startXBeeCommandMode();
-  xbeeSerialNumber = getXBeeSerialNumber();
-  xbeeDestination = getXBeeDestination();
+  //xbeeSerialNumber = getXBeeSerialNumber();
+  //xbeeDestination = getXBeeDestination();
+  xbeeConfig.identifier = getXBeeCommandResponse(F("ATNI"));
+  xbeeConfig.coordinator = (uint8_t)getXBeeNumericResponse(F("ATCE"));
+  xbeeConfig.serialNumber = getXBeeSerialNumber();
+  xbeeConfig.destination = getXBeeDestination();
+  xbeeConfig.preamble = (uint8_t)getXBeeNumericResponse(F("ATHP"));
+  xbeeConfig.network = getXBeeNumericResponse(F("ATID"));
   stopXBeeCommandMode(false);
+
+  // PODD group number is equivalent to preamble ID
+  xbeeGroup = (xbeeConfig.preamble > 0) ? xbeeConfig.preamble : 0;
   
   //Serial.println(F("  XBee serial number: ") + getXBeeSerialNumberString());
   //Serial.println(F("  XBee destination:   ") + getXBeeDestinationString());
@@ -409,6 +493,18 @@ void initXBee() {
 void configureXBee(const bool coord) {
   // Takes ~ 2 seconds to enter command mode.
   startXBeeCommandMode();
+
+  // Update XBee identifier to device ID (if necessary)
+  if (!xbeeConfig.identifier.equals(getDevID())) {
+    xbeeConfig.identifier = getDevID();
+    submitXBeeCommand(F("ATNI ") + xbeeConfig.identifier);
+  }
+
+  // Update XBee preamble ID to PODD XBee group number (if necessary)
+  if ((xbeeConfig.preamble != xbeeGroup) && (xbeeGroup >= 1) && (xbeeGroup <= 7)) {
+    xbeeConfig.preamble = xbeeGroup;
+    submitXBeeCommand(F("ATHP ") + String(xbeeConfig.preamble,HEX));
+  }
   
   // Settings for coordinator
   if (coord) {
@@ -418,8 +514,8 @@ void configureXBee(const bool coord) {
     // Note command string omits '0x'.
     //submitXBeeCommand(F("ATDH 00000000"));
     //submitXBeeCommand(F("ATDL 0000FFFF"));
-    xbeeDestination = 0xFFFF;
-    setXBeeDestination(xbeeDestination);
+    xbeeConfig.destination = 0xFFFF;
+    setXBeeDestination(xbeeConfig.destination);
     
   // Settings for drone
   } else {
@@ -440,11 +536,11 @@ void configureXBee(const bool coord) {
     // otherwise broadcast data until we get the coordinator address
     // via a broadcast.
     // XBee 900HP serial numbers are of form 0x0013A2XXXXXXXXXX.
-    if (((xbeeDestination >> 40) & 0xFFFFFF) == 0x0013A2) {
+    if (((xbeeConfig.destination >> 40) & 0xFFFFFF) == 0x0013A2) {
       // do nothing (keep current destination)
     } else {
-      xbeeDestination = 0xFFFF;
-      setXBeeDestination(xbeeDestination);
+      xbeeConfig.destination = 0xFFFF;
+      setXBeeDestination(xbeeConfig.destination);
     }
   }
   
@@ -942,8 +1038,8 @@ void broadcastCoordinatorAddress() {
   if (!getModeCoord()) return;
   
   Serial.println(F("Broadcasting coordinator address to all nodes...."));
-  uint32_t SH = (xbeeSerialNumber >> 32) & 0xFFFFFFFF;
-  uint32_t SL = (xbeeSerialNumber >>  0) & 0xFFFFFFFF;
+  uint32_t SH = (xbeeConfig.serialNumber >> 32) & 0xFFFFFFFF;
+  uint32_t SL = (xbeeConfig.serialNumber >>  0) & 0xFFFFFFFF;
   
   // Zero-padded hex string.
   char buff[18];
@@ -976,14 +1072,14 @@ void processDestinationPacket(const String packet) {
   }
   
   // Update destination address only if it has changed
-  if (v != xbeeDestination) {
-    xbeeDestination = v;
+  if (v != xbeeConfig.destination) {
+    xbeeConfig.destination = v;
     startXBeeCommandMode();
-    setXBeeDestination(xbeeDestination);
+    setXBeeDestination(xbeeConfig.destination);
     stopXBeeCommandMode(true);
     Serial.print(F("Coordinator (destination) address updated: "));
-    uint32_t DH = (xbeeDestination >> 32) & 0xFFFFFFFF;
-    uint32_t DL = (xbeeDestination >>  0) & 0xFFFFFFFF;
+    uint32_t DH = (xbeeConfig.destination >> 32) & 0xFFFFFFFF;
+    uint32_t DL = (xbeeConfig.destination >>  0) & 0xFFFFFFFF;
     char buff[20];
     sprintf(buff,"0x%08lX%08lX",DH,DL);
     Serial.println(buff);
@@ -993,13 +1089,84 @@ void processDestinationPacket(const String packet) {
 
 //--------------------------------------------------------------------------------------------- [Upload Support]
 
+/* Loads network configuration information from EEPROM if available, 
+   otherwise sets default values. */
+void loadNetworkConfig() {
+  // Check config version
+  uint16_t version = (((uint16_t)EEPROM.read(EEPROM_NETWORK_ADDR + 0)) << 0)
+                     + (((uint16_t)EEPROM.read(EEPROM_NETWORK_ADDR + 1)) << 8);
+
+  // Load data if valid
+  if (version == NETWORK_CONFIG_VERSION) {
+    for (size_t k = 0; k < sizeof(networkConfig); k++) {
+      *((char*)&networkConfig + k) = EEPROM.read(EEPROM_NETWORK_ADDR + k);
+    }
+  } else {
+    networkConfig.version = NETWORK_CONFIG_VERSION;
+    networkConfig.flags = 0x00;
+    networkConfig.staticIP = 0;
+    networkConfig.dnsIP = 0x08080808;  // Google DNS: 8.8.8.8
+    networkConfig.gatewayIP = 0;
+    networkConfig.subnet = 0;
+    //saveNetworkConfig();
+  }
+}
+
+
+/* Saves network configuration information to EEPROM. */
+void saveNetworkConfig() {
+  for (size_t k = 0; k < sizeof(networkConfig); k++) {
+    // Put only writes byte if different from current EEPROM value
+    // (reduces EEPROM wear).  If configuration hasn't changed,
+    // this will not actually write anything.
+    EEPROM.put(EEPROM_NETWORK_ADDR + k, *((char*)&networkConfig + k));
+  }
+}
+
+
+void setNetworkFlags(uint8_t flags) {
+  networkConfig.flags = flags;
+}
+uint8_t getNetworkFlags() {
+  return networkConfig.flags;
+}
+
+void setNetworkStaticIP(uint32_t ip) {
+  networkConfig.staticIP = ip;
+}
+uint32_t getNetworkStaticIP() {
+  return networkConfig.staticIP;
+}
+
+void setNetworkGatewayIP(uint32_t ip) {
+  networkConfig.gatewayIP = ip;
+}
+uint32_t getNetworkGatewayIP() {
+  return networkConfig.gatewayIP;
+}
+
+void setNetworkSubnetMask(uint32_t ip) {
+  networkConfig.subnet = ip;
+}
+uint32_t getNetworkSubnetMask() {
+  return networkConfig.subnet;
+}
+
+void setNetworkDNSServerIP(uint32_t ip) {
+  networkConfig.dnsIP = ip;
+}
+uint32_t getNetworkDNSServerIP() {
+  return networkConfig.dnsIP;
+}
+
+
 /* Sets the ethernet MAC address using the XBee serial number. */
 void initMACAddress() {
   // Use XBee's serial number for ethernet MAC address
   // (as it does not have its own). Serial number should
   // be cached already.
-  uint32_t SH = (xbeeSerialNumber >> 32) & 0xFFFFFFFF;
-  uint32_t SL = (xbeeSerialNumber >>  0) & 0xFFFFFFFF;
+  uint32_t SH = (xbeeConfig.serialNumber >> 32) & 0xFFFFFFFF;
+  uint32_t SL = (xbeeConfig.serialNumber >>  0) & 0xFFFFFFFF;
   // If failed to get XBee serial number, provide a default.
   // For XBee S3B, SH would be 0x0013A2XX; we use the same here
   // to allow for network whitelisting by MAC range.
@@ -1037,6 +1204,9 @@ void ethernetSetup() {
   #if HTTP_POST_TIMEOUT >= 1000
   Serial.println(F("******** DEBUG: Long HTTP post timeout in use ********"));
   #endif
+
+  // Get network configuration settings fron EEPROM
+  loadNetworkConfig();
   
   // Provide power to the ethernet board
   pinMode(ETHERNET_EN, OUTPUT);
@@ -1136,13 +1306,44 @@ bool ethernetBegin(int attempts) {
     // Link status (not supported by W5100)
     //Serial.print(F("Ethernet link status: "));
     //Serial.println(Ethernet.linkStatus());
+
+    // Static IP address
+    // There is no checking of valid network connection in this
+    // case, so we just return true.
+    // If any addresses/masks are zero, we set IP-dependent
+    // default values.
+    if ((networkConfig.flags & 0x01) != 0) {
+      IPAddress ip = IPAddress(networkConfig.staticIP);
+      IPAddress dns = IPAddress(networkConfig.dnsIP);
+      if (networkConfig.dnsIP == 0) {
+        dns = ip;
+        dns[3] = 1;
+        //dns = IPAddress(8,8,8,8);  // Google DNS
+      }
+      IPAddress gateway = IPAddress(networkConfig.gatewayIP);
+      if (networkConfig.gatewayIP == 0) {
+        gateway = ip;
+        gateway[3] = 1;
+      }
+      IPAddress subnet = IPAddress(networkConfig.subnet);
+      if (networkConfig.subnet == 0) {
+        subnet = IPAddress(255,255,255,0);
+      }
+      Ethernet.begin(ethMACAddress,ip,dns,gateway,subnet);
+      ethStatus.restarted(true);
+      Serial.print(F("Ethernet initialized with static IP address. IP: "));
+      Serial.println(Ethernet.localIP());
+      return true;
+    }
+
+    // Everything below is for dynamic IP address
     
-    // For whatever reason, this seems to fail 20-30% of the time,
+    // For whatever reason, DHCP seems to fail 20-30% of the time,
     // at least when testing on LMN network.  Firmware should be
     // capable of calling this routine again if begin() fails, perhaps
     // after some interval of time to avoid getting stuck in a
     // reinitialization loop (if the network is actually inaccessible).
-    if (!Ethernet.begin(ethMACAddress,ETHERNET_START_TIMEOUT)) {
+    if (!Ethernet.begin(ethMACAddress,ETHERNET_DHCP_TIMEOUT,ETHERNET_DHCP_RESPONSE_TIMEOUT)) {
       ethStatus.restarted(false);
       if (k < attempts) {
         Serial.println(F("Ethernet initialization failed.  Retrying..."));
@@ -1156,6 +1357,7 @@ bool ethernetBegin(int attempts) {
       return true;
     }
   }
+  
   return false;
 }
 
@@ -1185,6 +1387,9 @@ void ethernetMaintain() {
     ethernetBegin(1);
     return;
   }
+
+  // No DHCP maintenance if have static IP address
+  if ((networkConfig.flags & 0x01) != 0) return;
 
   // Routine will perform occasional network connection
   // maintenance, like renewing DHCP lease when necessary.

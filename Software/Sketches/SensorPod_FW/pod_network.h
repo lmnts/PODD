@@ -26,6 +26,8 @@ void setXBeeDestination(const uint64_t dest);
 
 String getXBeeSerialNumberString();
 String getXBeeDestinationString();
+uint8_t getXBeeGroup();
+void setXBeeGroup(uint8_t group);
 
 // XBee routines
 void initXBee();
@@ -54,6 +56,19 @@ void processDestinationPacket(const String packet);
 //--------------------------------------------------------------------------------------------- [Upload Support]
 
 #define ETHERNET_EN 43
+
+void loadNetworkConfig();
+void saveNetworkConfig();
+void setNetworkFlags(uint8_t flags);
+uint8_t getNetworkFlags();
+void setNetworkStaticIP(uint32_t ip);
+uint32_t getNetworkStaticIP();
+void setNetworkGatewayIP(uint32_t ip);
+uint32_t getNetworkGatewayIP();
+void setNetworkSubnetMask(uint32_t ip);
+uint32_t getNetworkSubnetMask();
+void setNetworkDNSServerIP(uint32_t ip);
+uint32_t getNetworkDNSServerIP();
 
 void initMACAddress();
 String getMACAddressString();

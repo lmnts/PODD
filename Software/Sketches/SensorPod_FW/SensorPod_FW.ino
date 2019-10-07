@@ -66,15 +66,16 @@ void setup() {
   #ifdef CLOCK_TESTING
   testClock(-1,1000);
   #endif
-  
+
   #ifdef SENSOR_TESTING
+  Serial.println(F("######## DEBUG: HIGHER SOUND SAMPLING RATE ########"));
   Wire.begin();
   // Sound sensor testing
   testSoundSensor(-1,1000);
   // Temperature/humidity sensor testing
   testTemperatureSensor(-1,1000);
   // Particulate matter sensor testing
-  testPMSensor(-1,5000,10000,10000);
+  testPMSensor(-1,1000,5000,5000);
   #endif
   
   Serial.println(LINE);
@@ -139,12 +140,17 @@ void setup() {
   Serial.println(getXBeeSerialNumberString());
   Serial.print(F("  Destination:   "));
   Serial.println(getXBeeDestinationString());
-
+  Serial.print(F("  PODD group:    "));
+  Serial.println(getXBeeGroup());
+  if (getModeCoord()) {
+    broadcastCoordinatorAddress();
+  }
+  
   // Try again to connect coordinator to network, if not
   // currently connected.
   if (getModeCoord()) {
     if (!ethernetConnected()) {
-      Serial.print(F("Re-attempting to connect to the network.... ("));
+      Serial.println(F("Re-attempting to connect to the network...."));
       ethernetBegin(3);
     }
     //ethernetMaintain();

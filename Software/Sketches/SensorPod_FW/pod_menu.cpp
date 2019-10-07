@@ -116,6 +116,9 @@ void mainMenu() {
     // Ethernet settings
     Serial.println(F("  (N) Network settings"));
     showMenuNetworkSettings();
+    // XBee settings
+    Serial.println(F("  (X) XBee settings"));
+    showMenuXBeeSettings();
     // RTC time/settings
     Serial.println(F("  (C) Clock settings"));
     showMenuClockSettings();
@@ -170,6 +173,10 @@ void mainMenu() {
       case 'N':
       case 'n':
         configureNetworkSettings();
+        break;
+      case 'X':
+      case 'x':
+        configureXBeeSettings();
         break;
       case 'C':
       case 'c':
@@ -288,10 +295,46 @@ void showMenuNetworkSettings() {
   Serial.print((FType)MENU_INDENT2);
   Serial.print(F("IP address:  "));
   Serial.print(Ethernet.localIP());
+  if ((getNetworkFlags() & 0x01) != 0) {
+    Serial.print(F("  [static]"));
+  } else {
+    Serial.print(F("  [DHCP]"));
+  }
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Gateway:     "));
+  Serial.print(Ethernet.gatewayIP());
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Subnet:      "));
+  Serial.print(Ethernet.subnetMask());
   Serial.println();
   Serial.print((FType)MENU_INDENT2);
   Serial.print(F("DNS server:  "));
   Serial.print(Ethernet.dnsServerIP());
+  Serial.println();
+  //Serial.print((FType)MENU_INDENT2);
+  //Serial.print(F("XBee group:     "));
+  //Serial.print(getXBeeGroup());
+  //Serial.println();
+}
+
+
+//----------------------------------------------
+/* Prints to serial various XBee settings.
+   Intended to be used just below menu's XBee settings entry. */
+void showMenuXBeeSettings() {
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Serial number:  "));
+  Serial.print(getXBeeSerialNumberString());
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Destination:    "));
+  Serial.print(getXBeeDestinationString());
+  Serial.println();
+  Serial.print((FType)MENU_INDENT2);
+  Serial.print(F("Network group:  "));
+  Serial.print(getXBeeGroup());
   Serial.println();
 }
 
@@ -431,6 +474,7 @@ void configureSensorTimingSettings() {
 /* Prompt the user to update network settings over the serial interface. */
 void configureNetworkSettings() {
   bool b;
+  bool usingStaticIP = (getNetworkFlags() & 0x01) != 0;
 
   Serial.println(F("Current ethernet status:"));
   Serial.print(F("  Connected:   "));
@@ -441,16 +485,161 @@ void configureNetworkSettings() {
   Serial.println();
   Serial.print(F("  IP address:  "));
   Serial.print(Ethernet.localIP());
+  if (usingStaticIP) {
+    Serial.print(F("  [static]"));
+  } else {
+    Serial.print(F("  [DHCP]"));
+  }
   Serial.println();
   Serial.print(F("  DNS server:  "));
   Serial.print(Ethernet.dnsServerIP());
   Serial.println();
   Serial.println();
   
+  Serial.println(F("The IP address can be set to a fixed (static) value or assigned"));
+  Serial.println(F("automatically using DHCP.  This PODD is currently set to use"));
+  if (usingStaticIP) {
+    Serial.println(F("a static IP address."));
+    Serial.println();
+    b = serialYesNoPrompt(F("Switch to DHCP (y/n)?"),true,false);
+    if (b) {
+      usingStaticIP = false;
+      setNetworkFlags(getNetworkFlags() & 0xFE);
+    }
+  } else {
+    Serial.println(F("DHCP."));
+    Serial.println();
+    b = serialYesNoPrompt(F("Switch to a static IP address (y/n)?"),true,false);
+    if (b) {
+      usingStaticIP = true;
+      setNetworkFlags((getNetworkFlags() & 0xFE) | 0x01);
+    }
+  }
+  Serial.println();
+
+  if (usingStaticIP) {
+    IPAddress ip;
+    String ipstr;
+    String s;
+
+    // Static IP address
+    ip = IPAddress(getNetworkStaticIP());
+    //ipstr = ip.toString();
+    ipstr = String() + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
+    s = serialStringPrompt(F("Static IP address"),ipstr);
+    if (!s.equals(ipstr)) {
+      IPAddress newip;
+      if (newip.fromString(s)) {
+        setNetworkStaticIP((uint32_t)newip);
+        Serial.print(F("Static IP address changed to "));
+        Serial.print(IPAddress(getNetworkStaticIP()));
+        Serial.println();
+      } else {
+        Serial.println(F("Invalid IP address.  Static IP address will not be changed."));
+      }
+    }
+    
+    // Gateway IP address
+    ip = IPAddress(getNetworkGatewayIP());
+    //ipstr = ip.toString();
+    ipstr = String() + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
+    s = serialStringPrompt(F("Gateway IP address"),ipstr);
+    if (!s.equals(ipstr)) {
+      IPAddress newip;
+      if (newip.fromString(s)) {
+        setNetworkGatewayIP((uint32_t)newip);
+        Serial.print(F("Gateway IP address changed to "));
+        Serial.print(IPAddress(getNetworkGatewayIP()));
+        Serial.println();
+      } else {
+        Serial.println(F("Invalid IP address.  Gateway IP address will not be changed."));
+      }
+    }
+    
+    // Subnet mask
+    ip = IPAddress(getNetworkSubnetMask());
+    //ipstr = ip.toString();
+    ipstr = String() + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
+    s = serialStringPrompt(F("Subnet mask"),ipstr);
+    if (!s.equals(ipstr)) {
+      IPAddress newip;
+      if (newip.fromString(s)) {
+        setNetworkSubnetMask((uint32_t)newip);
+        Serial.print(F("Subnet mask changed to "));
+        Serial.print(IPAddress(getNetworkSubnetMask()));
+        Serial.println();
+      } else {
+        Serial.println(F("Invalid subnet mask.  Subnet mask will not be changed."));
+      }
+    }
+    
+    // DNS server IP address
+    ip = IPAddress(getNetworkDNSServerIP());
+    //ipstr = ip.toString();
+    ipstr = String() + ip[0] + "." + ip[1] + "." + ip[2] + "." + ip[3];
+    s = serialStringPrompt(F("DNS server IP address"),ipstr);
+    if (!s.equals(ipstr)) {
+      IPAddress newip;
+      if (newip.fromString(s)) {
+        setNetworkDNSServerIP((uint32_t)newip);
+        Serial.print(F("DNS server IP address changed to "));
+        Serial.print(IPAddress(getNetworkDNSServerIP()));
+        Serial.println();
+      } else {
+        Serial.println(F("Invalid IP address.  DNS server IP address will not be changed."));
+      }
+    }
+    
+    Serial.println();
+  }
+  
+  // Save network configuration to EEPROM (no actual writes if settings
+  // did not change).
+  saveNetworkConfig();
+  
   b = serialYesNoPrompt(F("(Re)initialize ethernet connection (y/n)?"),true,false);
   if (b) {
     Serial.println(F("Initializing ethernet...."));
     ethernetBegin(1);
+  }
+  
+  Serial.println();
+}
+
+
+//------------------------------------------------------------------------------
+/* Prompt the user to update XBee settings over the serial interface. */
+void configureXBeeSettings() {
+  int i;
+
+  Serial.println(F("XBee settings:"));
+  Serial.print(F("  Serial number:   "));
+  Serial.print(getXBeeSerialNumberString());
+  Serial.println();
+  Serial.print(F("  Destination:     "));
+  Serial.print(getXBeeDestinationString());
+  Serial.println();
+  Serial.println();
+  Serial.println(F("The destination address is that of the most recent coordinator"));
+  Serial.println(F("this PODD has been associated with (or the XBee broadcast"));
+  Serial.println(F("address if this PODD was a coordinator itself).  If the"));
+  Serial.println(F("coordinator changes, the new address will automatically be"));
+  Serial.println(F("acquired after this PODD enters running mode.  It may take"));
+  Serial.println(F("1-2 minutes to acquire the new address."));
+  Serial.println(F(""));
+  Serial.println(F("PODDs may be configured in multiple independent groups, each"));
+  Serial.println(F("with its own XBee network.  Each group must have its own"));
+  Serial.println(F("coordinator unit to upload sensor data within that group."));
+  Serial.println(F(""));
+  
+  i = serialIntegerPrompt(F("New PODD group (1-7) or enter to keep current"),true,getXBeeGroup());
+  if (i != getXBeeGroup()) {
+    if ((i >= 1) && (i <= 7)) {
+      Serial.println(F("Updating PODD group to ") + String(i) + F("."));
+      setXBeeGroup(i);
+    } else {
+      Serial.println(F("Invalid group: must be within 1-7."));
+    }
   }
   
   Serial.println();
@@ -543,7 +732,7 @@ void configureClockSettings() {
 //------------------------------------------------------------------------------
 /* Prompt the user to update debugging settings over the serial interface. */
 void configureDebugSettings() {
-  bool b;
+  //bool b;
 
   Serial.println(F("Debugging mode enables additional serial output.  For drone"));
   Serial.println(F("devices, this means keeping the USB system active, which is"));
@@ -551,6 +740,7 @@ void configureDebugSettings() {
   Serial.println(F("when the device starts and must be manually enabled each"));
   Serial.println(F("time it is desired."));
   Serial.println(F(""));
+  /*
   b = false;
   if (getDebugMode()) {
     Serial.println(F("Debug mode is currently enabled."));
@@ -561,6 +751,14 @@ void configureDebugSettings() {
   }
   if (b) {
     setDebugMode(!getDebugMode());
+  }
+  */
+  
+  setDebugMode(!getDebugMode());
+  if (getDebugMode()) {
+    Serial.println(F("Debug mode is now enabled."));
+  } else {
+    Serial.println(F("Debug mode is now disabled."));
   }
   
   Serial.println();
@@ -673,8 +871,9 @@ void sensorMenu() {
 
 
 //----------------------------------------------
+// OLD ROUTINE
 /* Calibrates CO2 sensor by allowing user to specify current CO2 level. */
-void sensorMenuCalibrateCO2Sensor() {
+void sensorMenuCalibrateCO2Sensor_OLD() {
   Serial.println(F("The CO2 sensor response can drift with time and should be recalibrated every"));
   Serial.println(F("3-6 months to maintain accuracy.  The sensor can be recalibrated if the current"));
   Serial.println(F("ambient CO2 level is known, either from another (calibrated) CO2 meter or because"));
@@ -704,6 +903,63 @@ void sensorMenuCalibrateCO2Sensor() {
     Serial.print(F("CO2 sensor set to "));
     Serial.print(ppm);
     Serial.println(F(" ppm."));
+    delay(600);  // 2 Hz reading rate, up to 100ms delay for readings
+    int ppm1 = getCO2();
+    Serial.print(F("CO2 sensor now measures "));
+    Serial.print(ppm1);
+    Serial.println(F(" ppm."));
+  } else {
+    Serial.println(F("Skipping calibration (no change)."));
+  }
+  Serial.println();
+  return;
+}
+
+
+//----------------------------------------------
+/* Calibrates CO2 sensor by allowing user to specify actual CO2 level
+   for a given CO2 reading. */
+void sensorMenuCalibrateCO2Sensor() {
+  Serial.println(F("The CO2 sensor response can drift with time and should be recalibrated every"));
+  Serial.println(F("3-6 months to maintain accuracy.  The sensor can be recalibrated if the current"));
+  Serial.println(F("ambient CO2 level is known, either from another (calibrated) CO2 meter or because"));
+  Serial.println(F("the PODD is outdoors or in a well-ventilated area: outdoor air has a CO2"));
+  Serial.println(F("concentration of 400-450 ppm (you might find a weather/CO2 station online"));
+  Serial.println(F("that provides local outdoor CO2 levels).  The sensor can also be recalibrated"));
+  Serial.println(F("if the actual CO2 level is known for any particular sensor reading in the past."));
+  Serial.println(F(""));
+  bool b = serialYesNoPrompt(F("Proceed with calibration (y/n)?"),true,false);
+  if (!b) return;
+  // Get current sensor measurement
+  int ppm0 = getCO2();
+  if (ppm0 < 0) {
+    Serial.println();
+    Serial.println(F("Failed to retrieve current CO2 data: there is a problem interacting"));
+    Serial.println(F("with the CO2 sensor.  Calibration cannot be performed."));
+    return;
+  }
+  Serial.println();
+  Serial.println(F("Provide both a sensor reading and the corresponding actual CO2 level."));
+  Serial.print(F("The current CO2 level is "));
+  Serial.print(ppm0);
+  Serial.println(F(" ppm."));
+  Serial.println(F(""));
+  // Get "true" CO2 level
+  int ppm_reading = serialIntegerPrompt(F("Sensor reading in ppm"),true,ppm0);
+  int ppm_actual = serialIntegerPrompt(F("Actual CO2 level for above reading in ppm"),true,ppm_reading);
+  if ((ppm_actual < 400) || (ppm_actual > 2000)) {
+    Serial.println(F("This program only allows calibration values within 400 - 2000 ppm."));
+    return;
+  }
+  // Send "true" level to sensor
+  if (ppm_reading != ppm_actual) {
+    setCO2(ppm_reading,ppm_actual);
+    Serial.print(F("CO2 sensor recalibrated so that "));
+    Serial.print(ppm_reading);
+    Serial.print(F(" now reads as "));
+    Serial.print(ppm_actual);
+    Serial.println(F(" ppm."));
+    delay(600);  // 2 Hz reading rate, up to 100ms delay for readings
     int ppm1 = getCO2();
     Serial.print(F("CO2 sensor now measures "));
     Serial.print(ppm1);
