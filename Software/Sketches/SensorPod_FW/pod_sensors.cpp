@@ -1320,18 +1320,22 @@ float getGlobeTemperature() {
 // Good reference for Arduino serial interface with CozIR CO2 sensor:
 //   https://github.com/roder/cozir
 
-// TODO: Add optional second numeric value to send command routines.
-//       This will allow auto-calibration to be configured and for
-//       calibration to be set using a known actual CO2 concentration
-//       and a known reading (rather than current reading).
-
 
 /* Initializes the CO2 sensor. */
 void initCO2Sensor() {
+  // There are sometimes timing issues.  Add small delays based on
+  // trial and error.  Better handling of serial interface in
+  // cozirSendCommand seems to have fixed many of the timing issues,
+  // so some remaining delays here may be spurious.
+  const unsigned int DELAY_MS = 10;
   // COZIR sensor communicates at 9600 baud
   CO2_serial.begin(9600);
   // Only enable serial interface while using it
   enableCO2Serial();
+  // First command seems to benefit from an initial delay on
+  // now-active serial interface
+  delay(DELAY_MS);
+  //delay(1);
   // Disable auto-calibration.  Operating mode must be in command mode.
   // The auto-calibration mode is disabled as the same effect can be
   // done in a post-processing step without loss of information.
@@ -1339,16 +1343,17 @@ void initCO2Sensor() {
   // and auto-calibration settings are lost once power is reset, so
   // it should not be relied on to maintain accuracy for PODD deployments
   // that are only a few weeks long or less.
-  cozirSendCommand('K',0);
-  cozirSendCommand('@',0);
+  if (cozirGetValue('@') != 0) {
+    cozirSendCommand('K',0);
+    delay(DELAY_MS);
+    cozirSendCommand('@',0);
+  }
   // Set digital filter to 32: measurements are moving average of
   // previous NN measurements, which are taken at 2 Hz.
   cozirSendCommand('A',32);
   // Set operating mode to polling
   cozirSendCommand('K',2);
-  //czr.SetOperatingMode(CZR_POLLING);
-  // Sensor needs ~ 8 - 10 ms before responding to further interaction.
-  delay(12);
+  delay(DELAY_MS);
   disableCO2Serial();
 }
 
@@ -1421,8 +1426,26 @@ void setCO2(int ppm) {
   //delay(10);
   // Only enable serial interface while using it
   enableCO2Serial();
-  //czr.CalibrateKnownGas((uint16_t)ppm);
   cozirSendCommand('X',ppm);
+  disableCO2Serial();
+}
+
+
+/* Calibrate the sensor by giving the actual CO2 level for a
+   given sensor reading, in ppm.  Use to calibrate sensor. */
+void setCO2(int ppm_reading, int ppm_actual) {
+  // Ignore invalid values
+  if (ppm_reading <= 0) return;
+  if (ppm_reading > 10000) return;
+  if (ppm_actual <= 0) return;
+  if (ppm_actual > 10000) return;
+  // Ignore if no change
+  if (ppm_reading == ppm_actual) return;
+  // Communications sometimes fail if recently used
+  //delay(10);
+  // Only enable serial interface while using it
+  enableCO2Serial();
+  cozirSendCommand('F',ppm_reading,ppm_actual);
   disableCO2Serial();
 }
 
@@ -1433,6 +1456,8 @@ void enableCO2Serial() {
   // NeoSWSerial need only listen.
   //CO2_serial.begin(9600);
   CO2_serial.listen();
+  // Clear buffer
+  //while (CO2_serial.available()) CO2_serial.read();
 }
 
 
@@ -1475,15 +1500,17 @@ String cozirCommandString(char c, int v, int v2) {
    integer  values to the CozIR CO2 sensor over the serial
    interface.  If integer is negative, it and following values
    will be omitted.  Returns true if communication was successful
-   (sensor returned command character).  Note the serial buffer
-   will be left with whatever the sensor sends after the command
-   character. */
+   (sensor returned command character).  This routine waits for
+   all serial data to finish arriving even if response is invalid.
+   The serial buffer will be left with whatever the sensor sends
+   after the command character. */
 bool cozirSendCommand(char c, int v, int v2) {
   //cozirSendCommand(cozirCommandString(c,v));
   // Clear incoming serial buffer first
   while(CO2_serial.available()) CO2_serial.read();
   // Send command
   String s = cozirCommandString(c,v,v2);
+  //Serial.println("DEBUG: cozir command -> '" + s + "'");
   CO2_serial.print(s);
   CO2_serial.print("\r\n");
   // Wait a limited time for response
@@ -1494,7 +1521,21 @@ bool cozirSendCommand(char c, int v, int v2) {
       // First non-space character should be same as command
       // character sent.
       char c0 = CO2_serial.read();
+      //Serial.println("DEBUG: cozir receive -> '" + String(c0) + "'");
       if (c0 == ' ') continue;
+      // Wait for all serial data to finish arriving, which
+      // we take to be the case when no new serial input is
+      // available for 2ms.  Incoming data is left in the
+      // serial buffer.
+      // NOTE: If we do not do this, incoming serial data
+      // may appear in any quickly-following calls to this
+      // routine, contaminating that interaction.
+      int n = CO2_serial.available();
+      delay(2);
+      while (CO2_serial.available() != n) {
+        n = CO2_serial.available();
+        delay(2);
+      }
       return (c0 == c);
       // Note post-command-character data received from sensor
       // remains in the serial buffer.
@@ -1526,15 +1567,22 @@ int cozirGetValue(char c, int v) {
   // Continue reading until no new input available for 2ms
   // (in case serial data still arriving).
   // Double while loops here are not redundant...
-  delay(2);
-  while (CO2_serial.available()) {
-    while (CO2_serial.available()) {
-      if (n < BUFF_LEN-1) {
-        buff[n] = CO2_serial.read();
-        n++;
-      }
-    }
-    delay(2);
+  // MOVE TO COZIRSENDCOMMAND FUNCTION
+  //delay(2);
+  //while (CO2_serial.available()) {
+  //  while (CO2_serial.available()) {
+  //    if (n < BUFF_LEN-1) {
+  //      buff[n] = CO2_serial.read();
+  //      n++;
+  //    }
+  //  }
+  //  delay(2);
+  //}
+  // CozirSendCommand waited for all data to arrive, so we
+  // do not need to wait here.
+  while (CO2_serial.available() && (n < BUFF_LEN-1)) {
+    buff[n] = CO2_serial.read();
+    n++;
   }
   buff[n] = '\0';
 

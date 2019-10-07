@@ -71,6 +71,7 @@ void initCO2Sensor();
 bool probeCO2Sensor();
 int getCO2();
 void setCO2(int ppm);
+void setCO2(int ppm_reading, int ppm_actual);
 void enableCO2Serial();
 void disableCO2Serial();
 String cozirCommandString(char c, int v=-1, int v2=-1);

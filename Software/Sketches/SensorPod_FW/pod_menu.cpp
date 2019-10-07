@@ -871,8 +871,9 @@ void sensorMenu() {
 
 
 //----------------------------------------------
+// OLD ROUTINE
 /* Calibrates CO2 sensor by allowing user to specify current CO2 level. */
-void sensorMenuCalibrateCO2Sensor() {
+void sensorMenuCalibrateCO2Sensor_OLD() {
   Serial.println(F("The CO2 sensor response can drift with time and should be recalibrated every"));
   Serial.println(F("3-6 months to maintain accuracy.  The sensor can be recalibrated if the current"));
   Serial.println(F("ambient CO2 level is known, either from another (calibrated) CO2 meter or because"));
@@ -901,6 +902,62 @@ void sensorMenuCalibrateCO2Sensor() {
     setCO2(ppm);
     Serial.print(F("CO2 sensor set to "));
     Serial.print(ppm);
+    Serial.println(F(" ppm."));
+    delay(600);  // 2 Hz reading rate, up to 100ms delay for readings
+    int ppm1 = getCO2();
+    Serial.print(F("CO2 sensor now measures "));
+    Serial.print(ppm1);
+    Serial.println(F(" ppm."));
+  } else {
+    Serial.println(F("Skipping calibration (no change)."));
+  }
+  Serial.println();
+  return;
+}
+
+
+//----------------------------------------------
+/* Calibrates CO2 sensor by allowing user to specify actual CO2 level
+   for a given CO2 reading. */
+void sensorMenuCalibrateCO2Sensor() {
+  Serial.println(F("The CO2 sensor response can drift with time and should be recalibrated every"));
+  Serial.println(F("3-6 months to maintain accuracy.  The sensor can be recalibrated if the current"));
+  Serial.println(F("ambient CO2 level is known, either from another (calibrated) CO2 meter or because"));
+  Serial.println(F("the PODD is outdoors or in a well-ventilated area: outdoor air has a CO2"));
+  Serial.println(F("concentration of 400-450 ppm (you might find a weather/CO2 station online"));
+  Serial.println(F("that provides local outdoor CO2 levels).  The sensor can also be recalibrated"));
+  Serial.println(F("if the actual CO2 level is known for any particular sensor reading in the past."));
+  Serial.println(F(""));
+  bool b = serialYesNoPrompt(F("Proceed with calibration (y/n)?"),true,false);
+  if (!b) return;
+  // Get current sensor measurement
+  int ppm0 = getCO2();
+  if (ppm0 < 0) {
+    Serial.println();
+    Serial.println(F("Failed to retrieve current CO2 data: there is a problem interacting"));
+    Serial.println(F("with the CO2 sensor.  Calibration cannot be performed."));
+    return;
+  }
+  Serial.println();
+  Serial.println(F("Provide both a sensor reading and the corresponding actual CO2 level."));
+  Serial.print(F("The current CO2 level is "));
+  Serial.print(ppm0);
+  Serial.println(F(" ppm."));
+  Serial.println(F(""));
+  // Get "true" CO2 level
+  int ppm_reading = serialIntegerPrompt(F("Sensor reading in ppm"),true,ppm0);
+  int ppm_actual = serialIntegerPrompt(F("Actual CO2 level for above reading in ppm"),true,ppm_reading);
+  if ((ppm_actual < 400) || (ppm_actual > 2000)) {
+    Serial.println(F("This program only allows calibration values within 400 - 2000 ppm."));
+    return;
+  }
+  // Send "true" level to sensor
+  if (ppm_reading != ppm_actual) {
+    setCO2(ppm_reading,ppm_actual);
+    Serial.print(F("CO2 sensor recalibrated so that "));
+    Serial.print(ppm_reading);
+    Serial.print(F(" now reads as "));
+    Serial.print(ppm_actual);
     Serial.println(F(" ppm."));
     delay(600);  // 2 Hz reading rate, up to 100ms delay for readings
     int ppm1 = getCO2();
